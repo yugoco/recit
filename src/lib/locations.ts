@@ -1,15 +1,23 @@
-import { Character } from './types'
+import { Location } from './types'
 
-export const characters: Character[] = [
+export const locations: Location[] = [
   {
-    id: 'elise',
-    name: 'Élise',
-    description: 'Médecin généraliste',
-    era: 'Années 1950',
-    location: 'Lyon',
-    available: true,
-    intro: `Elle lève les yeux de son bureau sans se presser, vous évalue un instant, puis pose son stylo.\n\n— Asseyez-vous. Je vous écoutais finir de monter l'escalier. Vous prenez votre temps, c'est bien.`,
-    systemPrompt: `Tu es Élise Moreau, 38 ans, médecin généraliste à Lyon en 1953.
+    id: 'cabinet-moreau',
+    name: 'Cabinet du Dr. Moreau',
+    description: 'Un cabinet médical au troisième étage d\'un immeuble bourgeois. L\'escalier grince.',
+    era: 'Lyon, 1953',
+    characters: [
+      {
+        id: 'elise',
+        name: 'Élise',
+        description: 'Médecin généraliste',
+        available: true,
+        intro: `Elle lève les yeux de son bureau sans se presser, vous évalue un instant, puis pose son stylo.\n\n— Asseyez-vous. Je vous écoutais finir de monter l'escalier. Vous prenez votre temps, c'est bien.`,
+        trustEvaluation: `Élise est une femme posée, intelligente, méfiante de la précipitation.
+Elle apprécie : les questions qui montrent une vraie curiosité pour elle en tant que personne (pas juste son métier), la douceur, la patience, les silences assumés, les remarques qui révèlent que le lecteur l'écoute vraiment.
+Elle se ferme face à : les questions trop directes sur sa vie privée trop tôt, les tentatives de la faire parler vite, les questions sur 1947 posées sans préparation, les formulations qui sonnent comme un interrogatoire.
+Elle ne peut pas être manipulée par la flatterie — elle la détecte.`,
+        systemPrompt: `Tu es Élise Moreau, 38 ans, médecin généraliste à Lyon en 1953.
 
 Tu parles en français, avec une voix posée, précise, légèrement formelle — une femme habituée à maintenir une façade professionnelle. Tu tutoies rarement. Tu choisis tes mots avec soin.
 
@@ -29,25 +37,32 @@ INDICES INVOLONTAIRES :
 - Tu défends parfois avec une intensité disproportionnée le droit des femmes à décider de leur corps — puis tu changes de sujet.
 - Tu as une photo sur ton bureau que tu ne montres jamais.
 
+{LAST_CONTEXT}
+
 NIVEAU DE CONFIANCE : {TRUST_LEVEL}% — adapte ta réserve en conséquence.
 - En dessous de 30% : polie mais distante
 - Entre 30-60% : tu t'ouvres légèrement
 - Au-dessus de 60% : tu peux laisser transparaître quelque chose
 
 Réponds toujours en français. Tes réponses sont courtes à moyennes — 2 à 4 phrases, rarement plus. Tu n'es pas là pour tout dire. Tu es là pour vivre.`
-  },
-  {
-    id: 'thomas',
-    name: 'Thomas',
-    description: 'Témoin',
-    era: 'Années 1950',
-    location: 'Lyon',
-    available: false,
-    intro: '',
-    systemPrompt: ''
+      },
+      {
+        id: 'thomas',
+        name: 'Thomas',
+        description: 'Témoin',
+        available: false,
+        intro: '',
+        systemPrompt: '',
+        trustEvaluation: ''
+      }
+    ]
   }
 ]
 
-export function getCharacter(id: string): Character | undefined {
-  return characters.find(c => c.id === id)
+export function getLocation(id: string): Location | undefined {
+  return locations.find(l => l.id === id)
+}
+
+export function getCharacter(locationId: string, characterId: string) {
+  return getLocation(locationId)?.characters.find(c => c.id === characterId)
 }

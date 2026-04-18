@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
-import { getCharacter } from '@/lib/characters'
+import { getCharacter } from '@/lib/locations'
 import { Message } from '@/lib/types'
 
 const client = new Anthropic({
@@ -9,9 +9,9 @@ const client = new Anthropic({
 
 export async function POST(request: NextRequest) {
   try {
-    const { characterId, messages, trustLevel } = await request.json()
+    const { locationId, characterId, messages, trustLevel, lastContext } = await request.json()
 
-    const character = getCharacter(characterId)
+    const character = getCharacter(locationId, characterId)
     if (!character) {
       return NextResponse.json(
         { error: 'Personnage introuvable' },
@@ -19,10 +19,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const systemPrompt = character.systemPrompt.replace(
-      '{TRUST_LEVEL}',
-      trustLevel.toString()
-    )
+    const lastContextBlock = lastContext
+      ? `DERNIÈRE RENCONTRE (souvenir) :\n${lastContext}\n\nTu peux faire une référence naturelle et subtile à cette dernière fois si c'est pertinent.`
+      : ''
+
+    const systemPrompt = character.systemPrompt
+      .replace('{TRUST_LEVEL}', trustLevel.toString())
+      .replace('{LAST_CONTEXT}', lastContextBlock)
 
     const formattedMessages = messages.map((m: Message) => ({
       role: m.role,

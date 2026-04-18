@@ -4,29 +4,20 @@ export interface Message {
   timestamp: number
 }
 
-export interface Session {
-  id: string
-  characterId: string
-  messages: Message[]
-  createdAt: number
-  updatedAt: number
-}
-
 export interface Character {
   id: string
   name: string
   description: string
-  era: string
-  location: string
-  systemPrompt: string
-  intro: string
   available: boolean
+  intro: string
+  systemPrompt: string
+  trustEvaluation: string
 }
 
-export interface TrustState {
-  [characterId: string]: number
-}
-
-export interface SessionState {
-  [characterId: string]: Message[]
+export interface Location {
+  id: string
+  name: string
+  description: string
+  era: string
+  characters: Character[]
 }

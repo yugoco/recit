@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getCharacter } from '@/lib/characters'
+import { getCharacter } from '@/lib/locations'
 import { Message } from '@/lib/types'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
@@ -10,29 +10,34 @@ import TrustBar from '@/components/TrustBar'
 export default function ConversationPage() {
   const params = useParams()
   const router = useRouter()
+  const locationId = params.locationId as string
   const characterId = params.characterId as string
-  const character = getCharacter(characterId)
+  const character = getCharacter(locationId, characterId)
 
   const [messages, setMessages] = useState<Message[]>([])
   const [trust, setTrust] = useState(10)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [sessionCount, setSessionCount] = useState(0)
+  const [encounterCount, setEncounterCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
-    if (!character) return
+    if (!character || hasInitialized.current) return
+    hasInitialized.current = true
 
-    const savedMessages = localStorage.getItem(`recit_messages_${characterId}`)
-    const savedTrust = localStorage.getItem(`recit_trust_${characterId}`)
-    const savedSessions = localStorage.getItem(`recit_sessions_${characterId}`)
+    const savedMessages = localStorage.getItem(`recit_messages_${locationId}_${characterId}`)
+    const savedTrust = localStorage.getItem(`recit_trust_${locationId}_${characterId}`)
+    const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
 
-    const trust = savedTrust ? parseInt(savedTrust) : 10
-    const sessions = savedSessions ? parseInt(savedSessions) : 0
+    const currentTrust = savedTrust ? parseInt(savedTrust) : 10
+    const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
+    const thisEncounter = previousEncounters + 1
 
-    setTrust(trust)
-    setSessionCount(sessions)
+    setTrust(currentTrust)
+    setEncounterCount(thisEncounter)
+    localStorage.setItem(`recit_encounters_${locationId}_${characterId}`, thisEncounter.toString())
 
     if (savedMessages) {
       const parsed = JSON.parse(savedMessages)
@@ -44,11 +49,26 @@ export default function ConversationPage() {
         timestamp: Date.now()
       }
       setMessages([intro])
-      localStorage.setItem(`recit_messages_${characterId}`, JSON.stringify([intro]))
+      localStorage.setItem(`recit_messages_${locationId}_${characterId}`, JSON.stringify([intro]))
+    }
+  }, [locationId, characterId, character])
+
+  useEffect(() => {
+    const handleUnload = () => {
+      if (messages.length <= 1) return
+      const lastExchange = messages.slice(-6)
+      const summary = lastExchange
+        .map(m => `${m.role === 'user' ? 'Lecteur' : character?.name}: ${m.content}`)
+        .join('\n')
+      localStorage.setItem(`recit_last_context_${locationId}_${characterId}`, summary)
     }
 
-    localStorage.setItem(`recit_sessions_${characterId}`, (sessions + 1).toString())
-  }, [characterId, character])
+    window.addEventListener('beforeunload', handleUnload)
+    return () => {
+      handleUnload()
+      window.removeEventListener('beforeunload', handleUnload)
+    }
+  }, [messages, locationId, characterId, character])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -81,13 +101,17 @@ export default function ConversationPage() {
     }
 
     try {
+      const lastContext = localStorage.getItem(`recit_last_context_${locationId}_${characterId}`) || ''
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          locationId,
           characterId,
           messages: updatedMessages.slice(-20),
-          trustLevel: trust
+          trustLevel: trust,
+          lastContext
         })
       })
 
@@ -103,19 +127,42 @@ export default function ConversationPage() {
         const finalMessages = [...updatedMessages, assistantMessage]
         setMessages(finalMessages)
         localStorage.setItem(
-          `recit_messages_${characterId}`,
+          `recit_messages_${locationId}_${characterId}`,
           JSON.stringify(finalMessages)
         )
 
-        const newTrust = Math.min(100, trust + Math.floor(Math.random() * 4) + 1)
-        setTrust(newTrust)
-        localStorage.setItem(`recit_trust_${characterId}`, newTrust.toString())
+        evaluateTrust(userMessage.content, data.reply)
       }
     } catch (error) {
       console.error('Erreur:', error)
     }
 
     setIsLoading(false)
+  }
+
+  async function evaluateTrust(userInput: string, characterReply: string) {
+    try {
+      const response = await fetch('/api/trust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          characterId,
+          userInput,
+          characterReply,
+          currentTrust: trust
+        })
+      })
+
+      const data = await response.json()
+      if (typeof data.delta === 'number') {
+        const newTrust = Math.max(0, Math.min(100, trust + data.delta))
+        setTrust(newTrust)
+        localStorage.setItem(`recit_trust_${locationId}_${characterId}`, newTrust.toString())
+      }
+    } catch (error) {
+      console.error('Erreur évaluation confiance:', error)
+    }
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -130,7 +177,7 @@ export default function ConversationPage() {
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
   }
 
-  const isFirstSession = sessionCount <= 1
+  const isFirstEncounter = encounterCount <= 1
 
   return (
     <div style={{
@@ -158,7 +205,7 @@ export default function ConversationPage() {
         zIndex: 10
       }}>
         <button
-          onClick={() => router.push('/')}
+          onClick={() => router.push(`/lieu/${locationId}`)}
           style={{
             fontFamily: "'Raleway', sans-serif",
             fontSize: '11px',
@@ -172,7 +219,7 @@ export default function ConversationPage() {
             padding: 0
           }}
         >
-          ← retour
+          ← quitter
         </button>
         <span style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
@@ -188,7 +235,7 @@ export default function ConversationPage() {
           fontStyle: 'italic',
           color: '#8a8680'
         }}>
-          session {sessionCount}
+          {isFirstEncounter ? 'première rencontre' : `rencontre ${encounterCount}`}
         </span>
       </div>
 
@@ -224,7 +271,9 @@ export default function ConversationPage() {
             color: '#8a8680',
             letterSpacing: '0.1em'
           }}>
-            {isFirstSession ? 'Première rencontre' : `Session ${sessionCount} — elle se souvient de vous`}
+            {isFirstEncounter
+              ? 'Première rencontre'
+              : `Rencontre ${encounterCount} — elle se souvient de vous`}
           </span>
         </div>
 

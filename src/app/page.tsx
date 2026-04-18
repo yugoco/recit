@@ -1,28 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { characters } from '@/lib/characters'
-import CharacterCard from '@/components/CharacterCard'
+import { locations } from '@/lib/locations'
 
-export default function Home() {
+export default function HomePage() {
   const router = useRouter()
-  const [sessionCounts, setSessionCounts] = useState<{ [key: string]: number }>({})
-
-  useEffect(() => {
-    const counts: { [key: string]: number } = {}
-    characters.forEach(c => {
-      const saved = localStorage.getItem(`recit_sessions_${c.id}`)
-      counts[c.id] = saved ? parseInt(saved) : 0
-    })
-    setSessionCounts(counts)
-  }, [])
 
   return (
-    <main style={{
+    <div style={{
       minHeight: '100vh',
       background: '#f7f4ef',
+      fontFamily: "'Raleway', sans-serif",
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '3rem 2rem'
@@ -32,92 +22,73 @@ export default function Home() {
         rel="stylesheet"
       />
 
-      <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center' }}>
-
-        <p style={{
-          fontFamily: "'Raleway', sans-serif",
-          fontSize: '11px',
-          fontWeight: 400,
-          letterSpacing: '0.25em',
-          textTransform: 'uppercase',
-          color: '#8b6f47',
-          marginBottom: '1.5rem'
-        }}>
-          Un nouveau médium narratif
-        </p>
-
+      <div style={{ maxWidth: '480px', width: '100%' }}>
         <h1 style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '64px',
+          fontSize: '32px',
           fontWeight: 300,
-          letterSpacing: '-0.02em',
-          lineHeight: 1,
           color: '#1a1814',
-          marginBottom: '1rem'
+          marginBottom: '0.5rem',
+          letterSpacing: '0.02em'
         }}>
           Récit
         </h1>
-
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '17px',
-          fontWeight: 300,
+          fontSize: '14px',
           fontStyle: 'italic',
-          color: '#4a4640',
-          lineHeight: 1.6,
+          color: '#8a8680',
           marginBottom: '3rem'
         }}>
-          Chaque personnage porte une histoire.<br />
-          C'est à vous de la trouver.
+          Choisissez un lieu.
         </p>
 
-        <div style={{
-          width: '40px',
-          height: '1px',
-          background: '#d4cfc6',
-          margin: '0 auto 2rem'
-        }} />
-
-        <p style={{
-          fontFamily: "'Raleway', sans-serif",
-          fontSize: '10px',
-          fontWeight: 500,
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          color: '#8a8680',
-          marginBottom: '1rem'
-        }}>
-          Personnages
-        </p>
-
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          marginBottom: '2.5rem'
-        }}>
-          {characters.map(character => (
-            <CharacterCard
-              key={character.id}
-              character={character}
-              sessionCount={sessionCounts[character.id] || 0}
-              onClick={() => router.push(`/conversation/${character.id}`)}
-            />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: '#d4cfc6' }}>
+          {locations.map(location => (
+            <button
+              key={location.id}
+              onClick={() => router.push(`/lieu/${location.id}`)}
+              style={{
+                background: '#f7f4ef',
+                border: 'none',
+                padding: '1.5rem',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.35rem'
+              }}
+            >
+              <span style={{
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontSize: '20px',
+                fontWeight: 400,
+                color: '#1a1814'
+              }}>
+                {location.name}
+              </span>
+              <span style={{
+                fontFamily: "'Raleway', sans-serif",
+                fontSize: '11px',
+                fontWeight: 400,
+                letterSpacing: '0.12em',
+                color: '#8a8680'
+              }}>
+                {location.era}
+              </span>
+              <span style={{
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontSize: '13px',
+                fontStyle: 'italic',
+                color: '#8a8680',
+                marginTop: '0.1rem'
+              }}>
+                {location.description}
+              </span>
+            </button>
           ))}
         </div>
-
-        <p style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '13px',
-          fontStyle: 'italic',
-          color: '#8a8680',
-          lineHeight: 1.7
-        }}>
-          Certaines vérités ne se révèlent qu'avec le temps.<br />
-          Revenez. Elle se souviendra.
-        </p>
-
       </div>
-    </main>
+    </div>
   )
 }
