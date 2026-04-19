@@ -21,3 +21,9 @@ export interface Location {
   era: string
   characters: Character[]
 }
+
+export interface ReaderProgress {
+  discoveredClues: string[]        // indices trouvés par le lecteur
+  completedParts: string[]         // parties terminées
+  revealedInfo: Record<string, string[]> // characterId → ce qu'il a révélé au lecteur
+}

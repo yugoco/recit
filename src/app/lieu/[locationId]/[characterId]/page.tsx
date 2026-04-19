@@ -3,9 +3,37 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCharacter } from '@/lib/locations'
-import { Message } from '@/lib/types'
+import { getRelation, isPartUnlocked, story } from '@/lib/story'
+import { Message, ReaderProgress } from '@/lib/types'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
+
+function loadProgress(): ReaderProgress {
+  try {
+    const saved = localStorage.getItem('recit_progress')
+    return saved ? JSON.parse(saved) : {
+      discoveredClues: [],
+      completedParts: [],
+      revealedInfo: {}
+    }
+  } catch {
+    return { discoveredClues: [], completedParts: [], revealedInfo: {} }
+  }
+}
+
+function saveProgress(progress: ReaderProgress) {
+  localStorage.setItem('recit_progress', JSON.stringify(progress))
+}
+
+function detectMentionedCharacters(userInput: string): string[] {
+  const mentioned: string[] = []
+  story.characterRelations && Object.keys(story.characterRelations).forEach(charId => {
+    if (userInput.toLowerCase().includes(charId.toLowerCase())) {
+      mentioned.push(charId)
+    }
+  })
+  return mentioned
+}
 
 export default function ConversationPage() {
   const params = useParams()
@@ -19,29 +47,72 @@ export default function ConversationPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [encounterCount, setEncounterCount] = useState(0)
+  const [progress, setProgress] = useState<ReaderProgress>({
+    discoveredClues: [],
+    completedParts: [],
+    revealedInfo: {}
+  })
+  const [newClueFound, setNewClueFound] = useState<string | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasInitialized = useRef(false)
+  const lastContextRef = useRef<string>('')
+  const messagesRef = useRef<Message[]>([])
+  const characterRef = useRef(character)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     if (!character || hasInitialized.current) return
     hasInitialized.current = true
 
-    const savedMessages = localStorage.getItem(`recit_messages_${locationId}_${characterId}`)
     const savedTrust = localStorage.getItem(`recit_trust_${locationId}_${characterId}`)
     const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
-
     const currentTrust = savedTrust ? parseInt(savedTrust) : 10
-    const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
-    const thisEncounter = previousEncounters + 1
+    const currentEncounters = savedEncounters ? parseInt(savedEncounters) : 0
 
     setTrust(currentTrust)
-    setEncounterCount(thisEncounter)
-    localStorage.setItem(`recit_encounters_${locationId}_${characterId}`, thisEncounter.toString())
+    setEncounterCount(currentEncounters + 1)
+    setProgress(loadProgress())
 
-    if (savedMessages) {
-      const parsed = JSON.parse(savedMessages)
-      setMessages(parsed)
+    const savedContext = localStorage.getItem(`recit_last_context_${locationId}_${characterId}`) || ''
+    lastContextRef.current = savedContext
+    characterRef.current = character
+
+    if (savedContext) {
+      setIsLoading(true)
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          characterId,
+          messages: [],
+          trustLevel: currentTrust,
+          lastContext: savedContext,
+          openingMessage: true,
+          discoveredClues: loadProgress().discoveredClues,
+          mentionedCharacters: []
+        })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.reply) {
+            const opening: Message = {
+              role: 'assistant',
+              content: data.reply,
+              timestamp: Date.now()
+            }
+            setMessages([opening])
+            messagesRef.current = [opening]
+            lastContextRef.current = ''
+          }
+          setIsLoading(false)
+        })
+        .catch(() => setIsLoading(false))
     } else {
       const intro: Message = {
         role: 'assistant',
@@ -49,30 +120,62 @@ export default function ConversationPage() {
         timestamp: Date.now()
       }
       setMessages([intro])
-      localStorage.setItem(`recit_messages_${locationId}_${characterId}`, JSON.stringify([intro]))
+      messagesRef.current = [intro]
     }
   }, [locationId, characterId, character])
 
   useEffect(() => {
     const handleUnload = () => {
-      if (messages.length <= 1) return
-      const lastExchange = messages.slice(-6)
+      const currentMessages = messagesRef.current
+      if (currentMessages.length === 0) return
+
+      const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
+      const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
+      localStorage.setItem(
+        `recit_encounters_${locationId}_${characterId}`,
+        (previousEncounters + 1).toString()
+      )
+
+      const lastExchange = currentMessages.slice(-8)
       const summary = lastExchange
-        .map(m => `${m.role === 'user' ? 'Lecteur' : character?.name}: ${m.content}`)
+        .map(m => `${m.role === 'user' ? 'Lecteur' : characterRef.current?.name}: ${m.content}`)
         .join('\n')
       localStorage.setItem(`recit_last_context_${locationId}_${characterId}`, summary)
     }
 
     window.addEventListener('beforeunload', handleUnload)
-    return () => {
-      handleUnload()
-      window.removeEventListener('beforeunload', handleUnload)
-    }
-  }, [messages, locationId, characterId, character])
+    return () => window.removeEventListener('beforeunload', handleUnload)
+  }, [locationId, characterId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Masquer la notification d'indice après 4 secondes
+  useEffect(() => {
+    if (newClueFound) {
+      const timer = setTimeout(() => setNewClueFound(null), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [newClueFound])
+
+  function saveAndLeave() {
+    const currentMessages = messagesRef.current
+    if (currentMessages.length > 0) {
+      const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
+      const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
+      localStorage.setItem(
+        `recit_encounters_${locationId}_${characterId}`,
+        (previousEncounters + 1).toString()
+      )
+      const lastExchange = currentMessages.slice(-8)
+      const summary = lastExchange
+        .map(m => `${m.role === 'user' ? 'Lecteur' : characterRef.current?.name}: ${m.content}`)
+        .join('\n')
+      localStorage.setItem(`recit_last_context_${locationId}_${characterId}`, summary)
+    }
+    router.push(`/lieu/${locationId}`)
+  }
 
   if (!character) {
     return (
@@ -100,9 +203,11 @@ export default function ConversationPage() {
       textareaRef.current.style.height = 'auto'
     }
 
-    try {
-      const lastContext = localStorage.getItem(`recit_last_context_${locationId}_${characterId}`) || ''
+    const mentionedCharacters = detectMentionedCharacters(userMessage.content)
+    const lastContext = lastContextRef.current
+    lastContextRef.current = ''
 
+    try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -111,7 +216,9 @@ export default function ConversationPage() {
           characterId,
           messages: updatedMessages.slice(-20),
           trustLevel: trust,
-          lastContext
+          lastContext,
+          discoveredClues: progress.discoveredClues,
+          mentionedCharacters
         })
       })
 
@@ -131,7 +238,17 @@ export default function ConversationPage() {
           JSON.stringify(finalMessages)
         )
 
+        // Lancer trust et clues en parallèle
         evaluateTrust(userMessage.content, data.reply)
+
+        const hasAvailableClues = story.clues.some(clue =>
+          clue.revealedBy === characterId &&
+          trust >= clue.trustRequired &&
+          !progress.discoveredClues.includes(clue.id)
+        )
+        if (hasAvailableClues) {
+          detectClues(data.reply)
+        }
       }
     } catch (error) {
       console.error('Erreur:', error)
@@ -153,7 +270,6 @@ export default function ConversationPage() {
           currentTrust: trust
         })
       })
-
       const data = await response.json()
       if (typeof data.delta === 'number') {
         const newTrust = Math.max(0, Math.min(100, trust + data.delta))
@@ -161,7 +277,54 @@ export default function ConversationPage() {
         localStorage.setItem(`recit_trust_${locationId}_${characterId}`, newTrust.toString())
       }
     } catch (error) {
-      console.error('Erreur évaluation confiance:', error)
+      console.error('Erreur confiance:', error)
+    }
+  }
+
+  async function detectClues(characterReply: string) {
+    try {
+      const response = await fetch('/api/clues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId,
+          characterReply,
+          currentTrust: trust,
+          alreadyDiscovered: progress.discoveredClues
+        })
+      })
+      const data = await response.json()
+
+      if (data.discoveredClueIds?.length > 0) {
+        const newProgress = { ...progress }
+        let foundNew = false
+
+        data.discoveredClueIds.forEach((clueId: string) => {
+          if (!newProgress.discoveredClues.includes(clueId)) {
+            newProgress.discoveredClues.push(clueId)
+            foundNew = true
+          }
+        })
+
+        if (foundNew) {
+          // Vérifier si une nouvelle partie est débloquée
+          story.parts.forEach(part => {
+            if (
+              !newProgress.completedParts.includes(part.id) &&
+              part.requiredClues.length > 0 &&
+              part.requiredClues.every(id => newProgress.discoveredClues.includes(id))
+            ) {
+              newProgress.completedParts.push(part.id)
+            }
+          })
+
+          setProgress(newProgress)
+          saveProgress(newProgress)
+          setNewClueFound('Un nouvel indice a été révélé.')
+        }
+      }
+    } catch (error) {
+      console.error('Erreur indices:', error)
     }
   }
 
@@ -192,6 +355,28 @@ export default function ConversationPage() {
         rel="stylesheet"
       />
 
+      {/* Notification indice */}
+      {newClueFound && (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#1a1814',
+          color: '#f7f4ef',
+          fontFamily: "'Cormorant Garamond', Georgia, serif",
+          fontSize: '13px',
+          fontStyle: 'italic',
+          padding: '0.75rem 1.5rem',
+          borderRadius: '2px',
+          zIndex: 100,
+          opacity: 1,
+          transition: 'opacity 0.5s ease'
+        }}>
+          {newClueFound}
+        </div>
+      )}
+
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -205,7 +390,7 @@ export default function ConversationPage() {
         zIndex: 10
       }}>
         <button
-          onClick={() => router.push(`/lieu/${locationId}`)}
+          onClick={saveAndLeave}
           style={{
             fontFamily: "'Raleway', sans-serif",
             fontSize: '11px',
