@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getLocation } from '@/lib/locations'
+import { initDiegeticTime, isWithinSchedule, storageKeys } from '@/lib/time'
 
 function encounterLabel(count: number): string {
   if (count === 0) return 'inconnu·e'
@@ -10,29 +11,37 @@ function encounterLabel(count: number): string {
 }
 
 export default function LocationPage() {
-  const params = useParams()
-  const router = useRouter()
+  const params     = useParams()
+  const router     = useRouter()
   const locationId = params.locationId as string
-  const location = getLocation(locationId)
+  const location   = getLocation(locationId)
 
   const [encounterCounts, setEncounterCounts] = useState<Record<string, number>>({})
+  const [locationOpen,    setLocationOpen]    = useState(true)
 
   useEffect(() => {
     if (!location) return
+
+    // Phase 3 — initialiser le temps diégétique si pas encore fait
+    initDiegeticTime()
+
+    // Phase 3 — vérifier si le lieu est ouvert
+    if (location.schedule) {
+      const { openHour, closeHour } = location.schedule
+      setLocationOpen(isWithinSchedule(openHour, closeHour))
+    }
+
+    // Phase 2 — nouvelles clés sans locationId
     const counts: Record<string, number> = {}
     location.characters.forEach(character => {
-      const saved = localStorage.getItem(`recit_encounters_${locationId}_${character.id}`)
+      const saved = localStorage.getItem(storageKeys.encounters(character.id))
       counts[character.id] = saved ? parseInt(saved) : 0
     })
     setEncounterCounts(counts)
   }, [location, locationId])
 
   if (!location) {
-    return (
-      <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>
-        Lieu introuvable.
-      </div>
-    )
+    return <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>Lieu introuvable.</div>
   }
 
   return (
@@ -83,6 +92,21 @@ export default function LocationPage() {
           {location.name}
         </h2>
 
+        {/* Phase 3 — badge si fermé */}
+        {!locationOpen && location.schedule?.closedMessage && (
+          <p style={{
+            fontFamily: "'Raleway', sans-serif",
+            fontSize: 'clamp(13px, 1.4vw, 14px)',
+            fontWeight: 400,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: '#8b6f47',
+            marginBottom: '1rem'
+          }}>
+            {location.schedule.closedMessage}
+          </p>
+        )}
+
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
           fontSize: 'clamp(16px, 1.9vw, 19px)',
@@ -95,12 +119,7 @@ export default function LocationPage() {
           {location.description}
         </p>
 
-        <div style={{
-          width: '40px',
-          height: '1px',
-          background: '#d4cfc6',
-          margin: '0 auto 2rem'
-        }} />
+        <div style={{ width: '40px', height: '1px', background: '#d4cfc6', margin: '0 auto 2rem' }} />
 
         <p style={{
           fontFamily: "'Raleway', sans-serif",
@@ -114,16 +133,23 @@ export default function LocationPage() {
           Personnages
         </p>
 
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          marginBottom: '2.5rem'
-        }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '2.5rem' }}>
           {location.characters.map(character => {
             const visits = encounterCounts[character.id] ?? 0
 
-            if (!character.available) {
+            // Phase 3 — vérifier disponibilité temporelle du personnage
+            const charScheduleOpen = character.schedule
+              ? isWithinSchedule(character.schedule.openHour, character.schedule.closeHour)
+              : true
+
+            const isUnavailable = !character.available || !charScheduleOpen
+
+            if (isUnavailable) {
+              // Phase 3 — raison sémantique selon schedule vs available
+              const badgeText = !character.available
+                ? (character.unavailableReason ?? 'absent·e')
+                : (character.schedule?.closedMessage ?? 'absent·e')
+
               return (
                 <div
                   key={character.id}
@@ -170,9 +196,10 @@ export default function LocationPage() {
                     background: '#d4cfc6',
                     padding: '2px 8px',
                     borderRadius: '2px',
-                    marginLeft: '1rem'
+                    marginLeft: '1rem',
+                    whiteSpace: 'nowrap' as const
                   }}>
-                    absent·e
+                    {badgeText}
                   </span>
                 </div>
               )

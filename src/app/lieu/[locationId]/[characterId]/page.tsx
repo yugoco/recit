@@ -3,36 +3,66 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCharacter } from '@/lib/locations'
-import { getRelation, story, detectMentionedCharacters, computeNewlyUnlockedParts } from '@/lib/story'
-import { Message, ReaderProgress, ChatRequest } from '@/lib/types'
+import { getRelation, story, detectMentionedCharacters, computeNewlyUnlockedParts, checkStoryComplete } from '@/lib/story'
+import { Message, ReaderProgress, ChatRequest, ChatResponse } from '@/lib/types'
+import {
+  initDiegeticTime,
+  getAbsenceContext,
+  markLastSeen,
+  migrateStorageKeys,
+  storageKeys,
+  getDiegeticNow,
+  isWithinSchedule,
+  formatDiegeticDate
+} from '@/lib/time'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
 
-// ─── Clés localStorage ────────────────────────────────────────────────────────
-
-function trustKey(locationId: string, characterId: string) {
-  return `recit_trust_${locationId}_${characterId}`
-}
-function encountersKey(locationId: string, characterId: string) {
-  return `recit_encounters_${locationId}_${characterId}`
-}
-function contextKey(locationId: string, characterId: string) {
-  return `recit_last_context_${locationId}_${characterId}`
-}
-
-// ─── Progress ─────────────────────────────────────────────────────────────────
+// ─── Helpers localStorage ─────────────────────────────────────────────────────
 
 function loadProgress(): ReaderProgress {
   try {
-    const saved = localStorage.getItem('recit_progress')
-    return saved ? JSON.parse(saved) : { discoveredClues: [], completedParts: [] }
+    const saved = localStorage.getItem(storageKeys.progress())
+    return saved
+      ? JSON.parse(saved)
+      : { discoveredClues: [], completedParts: [], isStoryComplete: false }
   } catch {
-    return { discoveredClues: [], completedParts: [] }
+    return { discoveredClues: [], completedParts: [], isStoryComplete: false }
   }
 }
 
 function saveProgress(progress: ReaderProgress) {
-  localStorage.setItem('recit_progress', JSON.stringify(progress))
+  localStorage.setItem(storageKeys.progress(), JSON.stringify(progress))
+}
+
+// ─── Distillation Core Memory (Phase 4 — fire-and-forget) ────────────────────
+
+async function distillCoreMemory(
+  characterId: string,
+  messages: Message[],
+  sessionCount: number
+): Promise<void> {
+  if (messages.length < 4) return // pas assez de matière à distiller
+  try {
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId, messages, sessionCount })
+    })
+    const data = await res.json()
+    if (data.coreMemory) {
+      localStorage.setItem(storageKeys.coreMemory(characterId), JSON.stringify({
+        content: data.coreMemory,
+        characterId,
+        createdAt: data.createdAt ?? Date.now(),
+        sessionCount: data.sessionCount ?? sessionCount
+      }))
+      // La Core Memory remplace l'historique brut
+      localStorage.setItem(storageKeys.context(characterId), data.coreMemory)
+    }
+  } catch {
+    // Silencieux — c'est du fire-and-forget
+  }
 }
 
 // ─── Sauvegarde de fin de session ─────────────────────────────────────────────
@@ -45,99 +75,113 @@ function saveSession(
 ) {
   if (messages.length === 0) return
 
-  // Lire le compteur actuel et incrémenter
-  const key = encountersKey(locationId, characterId)
+  const key = storageKeys.encounters(characterId)
   const previous = parseInt(localStorage.getItem(key) ?? '0')
   localStorage.setItem(key, (previous + 1).toString())
 
-  // Sauvegarder le contexte des 8 derniers messages
+  // Sauvegarder contexte brut des 8 derniers messages (sera écrasé par Core Memory async)
   const summary = messages
     .slice(-8)
     .map(m => `${m.role === 'user' ? 'Lecteur' : characterName}: ${m.content}`)
     .join('\n')
-  localStorage.setItem(contextKey(locationId, characterId), summary)
+  localStorage.setItem(storageKeys.context(characterId), summary)
+
+  // Enregistrer timestamp pour contexte d'absence (Phase 3)
+  markLastSeen(characterId)
+
+  // Sauvegarder trust
+  // (déjà fait en temps réel dans evaluateTrust — pas besoin de répéter)
 }
 
-// ─── Label de visite ──────────────────────────────────────────────────────────
+// ─── Labels UI ────────────────────────────────────────────────────────────────
 
-/**
- * États de la relation selon les visites complétées et le niveau de confiance.
- * Le divider au-dessus des messages reflète l'état de la relation narrativement.
- */
 function relationLabel(completedEncounters: number, trust: number, pronoun: 'elle' | 'il'): string {
-  const p = pronoun
-  if (completedEncounters === 0) {
-    return 'Première visite'
-  }
-  if (completedEncounters === 1 && trust < 40) {
-    return `${p === 'elle' ? 'Elle' : 'Il'} se souvient de vous`
-  }
-  if (completedEncounters <= 3 && trust < 65) {
-    return `${p === 'elle' ? 'Elle' : 'Il'} commence à vous reconnaître`
-  }
-  if (trust >= 65) {
-    return `${p === 'elle' ? 'Elle' : 'Il'} vous fait confiance`
-  }
-  return `${p === 'elle' ? 'Elle' : 'Il'} se souvient de vous`
+  const p = pronoun === 'elle' ? 'Elle' : 'Il'
+  if (completedEncounters === 0) return 'Première visite'
+  if (completedEncounters === 1 && trust < 40) return `${p} se souvient de vous`
+  if (completedEncounters <= 3 && trust < 65)  return `${p} commence à vous reconnaître`
+  if (trust >= 65) return `${p} vous fait confiance`
+  return `${p} se souvient de vous`
 }
 
-function visitLabel(completedEncounters: number, position: 'list' | 'header'): string {
-  if (completedEncounters === 0) {
-    if (position === 'list') return 'inconnu·e'
-    return 'première visite'
-  }
-  const current = completedEncounters + 1
-  if (position === 'list') return `${completedEncounters} visite${completedEncounters > 1 ? 's' : ''}`
-  return `visite ${current}`
+function visitLabel(completedEncounters: number): string {
+  if (completedEncounters === 0) return 'première visite'
+  return `visite ${completedEncounters + 1}`
 }
 
-// ─── Composant ────────────────────────────────────────────────────────────────
+// ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ConversationPage() {
-  const params = useParams()
-  const router = useRouter()
-  const locationId = params.locationId as string
+  const params      = useParams()
+  const router      = useRouter()
+  const locationId  = params.locationId as string
   const characterId = params.characterId as string
-  const character = getCharacter(locationId, characterId)
+  const character   = getCharacter(locationId, characterId)
 
-  const [messages, setMessages] = useState<Message[]>([])
-  const [trust, setTrust] = useState(10)
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  // Nombre de visites COMPLÉTÉES au moment où on entre dans la page
+  const [messages,            setMessages]            = useState<Message[]>([])
+  const [trust,               setTrust]               = useState(10)
+  const [input,               setInput]               = useState('')
+  const [isLoading,           setIsLoading]           = useState(false)
   const [completedEncounters, setCompletedEncounters] = useState(0)
-  const [progress, setProgress] = useState<ReaderProgress>({
-    discoveredClues: [],
-    completedParts: []
-  })
-  const [newClueFound, setNewClueFound] = useState<string | null>(null)
+  const [progress,            setProgress]            = useState<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
+  const [newClueFound,        setNewClueFound]        = useState<string | null>(null)
+  const [sessionEnded,        setSessionEnded]        = useState(false)
+  const [sessionMsgCount,     setSessionMsgCount]     = useState(0)
+  // Phase 3 — heure diégétique (affiché en header)
+  const [diegeticTime,        setDiegeticTime]        = useState('')
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const hasInitialized = useRef(false)
-  const hasSavedSession = useRef(false)
-  const lastContextRef = useRef<string>('')
-  const messagesRef = useRef<Message[]>([])
-  const characterRef = useRef(character)
-  // Ref pour trust — évite les closures périmées dans evaluateTrust / detectClues
-  const trustRef = useRef(10)
-  const progressRef = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [] })
+  const messagesEndRef    = useRef<HTMLDivElement>(null)
+  const textareaRef       = useRef<HTMLTextAreaElement>(null)
+  const hasInitialized    = useRef(false)
+  const hasSavedSession   = useRef(false)
+  const lastContextRef    = useRef<string>('')
+  const messagesRef       = useRef<Message[]>([])
+  const trustRef          = useRef(10)
+  const progressRef       = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
+  const sessionMsgRef     = useRef(0)
+  const characterRef      = useRef(character)
 
-  useEffect(() => { messagesRef.current = messages }, [messages])
-  useEffect(() => { trustRef.current = trust }, [trust])
-  useEffect(() => { progressRef.current = progress }, [progress])
+  useEffect(() => { messagesRef.current  = messages  }, [messages])
+  useEffect(() => { trustRef.current     = trust     }, [trust])
+  useEffect(() => { progressRef.current  = progress  }, [progress])
+  useEffect(() => { sessionMsgRef.current = sessionMsgCount }, [sessionMsgCount])
 
-  // ─── Initialisation ───────────────────────────────────────────────────────
+  // ─── Phase 3 — horloge diégétique ─────────────────────────────────────────
+
+  useEffect(() => {
+    initDiegeticTime()
+    const tick = () => setDiegeticTime(formatDiegeticDate())
+    tick()
+    const id = setInterval(tick, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ─── Initialisation ────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!character || hasInitialized.current) return
-    hasInitialized.current = true
-    characterRef.current = character
+    hasInitialized.current  = true
+    characterRef.current    = character
 
-    const savedTrust = localStorage.getItem(trustKey(locationId, characterId))
-    const savedEncounters = localStorage.getItem(encountersKey(locationId, characterId))
-    const currentTrust = savedTrust ? parseInt(savedTrust) : 10
-    const completed = savedEncounters ? parseInt(savedEncounters) : 0
+    // Phase 2 — migration des anciennes clés localStorage
+    migrateStorageKeys(locationId, characterId)
+
+    // Phase 3 — vérifier disponibilité temporelle
+    if (character.schedule) {
+      const { openHour, closeHour } = character.schedule
+      if (!isWithinSchedule(openHour, closeHour)) {
+        const closedMsg = character.schedule.closedMessage ?? `${character.name} n'est pas disponible à cette heure.`
+        const closedMessage: Message = { role: 'assistant', content: closedMsg, timestamp: Date.now() }
+        setMessages([closedMessage])
+        setSessionEnded(true)
+        return
+      }
+    }
+
+    const savedTrust      = localStorage.getItem(storageKeys.trust(characterId))
+    const savedEncounters = localStorage.getItem(storageKeys.encounters(characterId))
+    const currentTrust    = savedTrust     ? parseInt(savedTrust)     : 10
+    const completed       = savedEncounters ? parseInt(savedEncounters) : 0
 
     setTrust(currentTrust)
     trustRef.current = currentTrust
@@ -147,21 +191,38 @@ export default function ConversationPage() {
     setProgress(initialProgress)
     progressRef.current = initialProgress
 
-    const savedContext = localStorage.getItem(contextKey(locationId, characterId)) ?? ''
-    lastContextRef.current = savedContext
+    // Récupérer Core Memory ou contexte brut
+    const coreMemoryRaw = localStorage.getItem(storageKeys.coreMemory(characterId))
+    const savedContext  = localStorage.getItem(storageKeys.context(characterId)) ?? ''
+    let lastContext = savedContext
 
-    if (savedContext) {
-      // Visite de retour — le personnage ouvre avec un message mémoriel
+    // Si on a une Core Memory, l'utiliser à la place du contexte brut
+    if (coreMemoryRaw) {
+      try {
+        const cm = JSON.parse(coreMemoryRaw)
+        if (cm.content) lastContext = cm.content
+      } catch { /* garder savedContext */ }
+    }
+
+    lastContextRef.current = lastContext
+
+    // Phase 3 — contexte d'absence
+    const absenceCtx = getAbsenceContext(characterId)
+
+    if (lastContext) {
+      // Visite de retour — message d'ouverture dynamique
       setIsLoading(true)
       const body: ChatRequest = {
         locationId,
         characterId,
         messages: [],
         trustLevel: currentTrust,
-        lastContext: savedContext,
+        lastContext,
         openingMessage: true,
         discoveredClues: initialProgress.discoveredClues,
-        mentionedCharacters: []
+        mentionedCharacters: [],
+        absenceContext: absenceCtx ?? undefined,
+        currentLocationName: character.locationContext?.[locationId] ? undefined : undefined
       }
       fetch('/api/chat', {
         method: 'POST',
@@ -169,12 +230,19 @@ export default function ConversationPage() {
         body: JSON.stringify(body)
       })
         .then(r => r.json())
-        .then(data => {
+        .then((data: ChatResponse) => {
           if (data.reply) {
             const opening: Message = { role: 'assistant', content: data.reply, timestamp: Date.now() }
             setMessages([opening])
             messagesRef.current = [opening]
             lastContextRef.current = ''
+          }
+          // Appliquer trust delta de l'ouverture si présent
+          if (data.trustDelta) {
+            const newTrust = Math.max(0, Math.min(100, currentTrust + data.trustDelta))
+            setTrust(newTrust)
+            trustRef.current = newTrust
+            localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
           }
           setIsLoading(false)
         })
@@ -187,13 +255,19 @@ export default function ConversationPage() {
     }
   }, [locationId, characterId, character])
 
-  // ─── Sauvegarde au déchargement (fermeture onglet, navigation externe) ────
+  // ─── Sauvegarde au déchargement ───────────────────────────────────────────
 
   useEffect(() => {
     const handleUnload = () => {
       if (hasSavedSession.current) return
       hasSavedSession.current = true
       saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
+      // Fire-and-forget : pas d'await possible dans beforeunload
+      distillCoreMemory(
+        characterId,
+        messagesRef.current,
+        parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
+      )
     }
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)
@@ -209,37 +283,50 @@ export default function ConversationPage() {
 
   useEffect(() => {
     if (newClueFound) {
-      const timer = setTimeout(() => setNewClueFound(null), 4000)
+      const timer = setTimeout(() => setNewClueFound(null), 4500)
       return () => clearTimeout(timer)
     }
   }, [newClueFound])
 
   // ─── Quitter ──────────────────────────────────────────────────────────────
 
-  function saveAndLeave() {
+  async function saveAndLeave() {
     if (!hasSavedSession.current) {
       hasSavedSession.current = true
       saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
     }
+
+    // Phase 4 — distillation async (non bloquante pour l'UX)
+    distillCoreMemory(
+      characterId,
+      messagesRef.current,
+      parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
+    )
+
     router.push(`/lieu/${locationId}`)
   }
 
   // ─── Envoi d'un message ───────────────────────────────────────────────────
 
   async function sendMessage() {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || sessionEnded) return
 
     const userMessage: Message = { role: 'user', content: input.trim(), timestamp: Date.now() }
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
     setInput('')
     setIsLoading(true)
+    setSessionMsgCount(c => c + 1)
+    sessionMsgRef.current += 1
 
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     const mentionedCharacters = detectMentionedCharacters(userMessage.content)
     const lastContext = lastContextRef.current
     lastContextRef.current = ''
+
+    // Phase 3 — contexte d'absence (seulement au premier message de retour)
+    const absenceCtx = messages.length <= 1 ? getAbsenceContext(characterId) : null
 
     try {
       const body: ChatRequest = {
@@ -249,7 +336,10 @@ export default function ConversationPage() {
         trustLevel: trustRef.current,
         lastContext,
         discoveredClues: progressRef.current.discoveredClues,
-        mentionedCharacters
+        mentionedCharacters,
+        absenceContext: absenceCtx ?? undefined,
+        currentLocationName: getCharacter(locationId, characterId)?.name,
+        sessionMessageCount: sessionMsgRef.current
       }
 
       const response = await fetch('/api/chat', {
@@ -258,7 +348,7 @@ export default function ConversationPage() {
         body: JSON.stringify(body)
       })
 
-      const data = await response.json()
+      const data: ChatResponse = await response.json()
 
       if (data.reply) {
         const assistantMessage: Message = {
@@ -269,93 +359,60 @@ export default function ConversationPage() {
         const finalMessages = [...updatedMessages, assistantMessage]
         setMessages(finalMessages)
 
-        // Évaluer la confiance en premier, puis passer le nouveau niveau à detectClues
-        const newTrust = await evaluateTrust(userMessage.content, data.reply)
+        // Phase 1 — trust delta depuis l'API unifiée
+        if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
+          const newTrust = Math.max(0, Math.min(100, trustRef.current + data.trustDelta))
+          setTrust(newTrust)
+          trustRef.current = newTrust
+          localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
+        }
 
-        const effectiveTrust = newTrust ?? trustRef.current
-        const hasAvailableClues = story.clues.some(clue =>
-          clue.revealedBy === characterId &&
-          effectiveTrust >= clue.trustRequired &&
-          !progressRef.current.discoveredClues.includes(clue.id)
-        )
-        if (hasAvailableClues) {
-          await detectClues(data.reply, effectiveTrust)
+        // Phase 1 — indices depuis l'API unifiée
+        if (data.newClueIds?.length > 0) {
+          applyNewClues(data.newClueIds)
+        }
+
+        // Phase 4 — fatigue diégétique
+        if (data.sessionEnded) {
+          setSessionEnded(true)
         }
       }
     } catch (error) {
-      console.error('Erreur:', error)
+      console.error('Erreur sendMessage:', error)
     }
 
     setIsLoading(false)
   }
 
-  // ─── Évaluation de confiance — retourne le nouveau niveau ────────────────
+  // ─── Appliquer les indices découverts ─────────────────────────────────────
 
-  async function evaluateTrust(userInput: string, characterReply: string): Promise<number | null> {
-    try {
-      const response = await fetch('/api/trust', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          characterId,
-          userInput,
-          characterReply,
-          currentTrust: trustRef.current
-        })
-      })
-      const data = await response.json()
-      if (typeof data.delta === 'number') {
-        const newTrust = Math.max(0, Math.min(100, trustRef.current + data.delta))
-        setTrust(newTrust)
-        trustRef.current = newTrust
-        localStorage.setItem(trustKey(locationId, characterId), newTrust.toString())
-        return newTrust
-      }
-    } catch (error) {
-      console.error('Erreur confiance:', error)
+  function applyNewClues(clueIds: string[]) {
+    const current = progressRef.current
+    const newClues = clueIds.filter(id => !current.discoveredClues.includes(id))
+    if (newClues.length === 0) return
+
+    const updatedDiscovered  = [...current.discoveredClues, ...newClues]
+    const newlyUnlocked      = computeNewlyUnlockedParts(current.completedParts, updatedDiscovered)
+    const storyJustCompleted = checkStoryComplete(newlyUnlocked)
+
+    const newProgress: ReaderProgress = {
+      discoveredClues: updatedDiscovered,
+      completedParts:  [...current.completedParts, ...newlyUnlocked],
+      isStoryComplete: current.isStoryComplete || storyJustCompleted,
+      completedAt:     storyJustCompleted ? Date.now() : current.completedAt
     }
-    return null
-  }
 
-  // ─── Détection d'indices — prend le trust effectif en paramètre ───────────
+    setProgress(newProgress)
+    progressRef.current = newProgress
+    saveProgress(newProgress)
 
-  async function detectClues(characterReply: string, effectiveTrust: number) {
-    try {
-      const response = await fetch('/api/clues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          characterId,
-          characterReply,
-          currentTrust: effectiveTrust,
-          alreadyDiscovered: progressRef.current.discoveredClues
-        })
-      })
-      const data = await response.json()
+    // Notif indice
+    const firstClue = story.clues.find(c => c.id === newClues[0])
+    setNewClueFound(firstClue?.content ?? 'Un nouvel indice a été révélé.')
 
-      if (data.discoveredClueIds?.length > 0) {
-        const current = progressRef.current
-        const newClues = (data.discoveredClueIds as string[]).filter(
-          id => !current.discoveredClues.includes(id)
-        )
-
-        if (newClues.length > 0) {
-          const updatedDiscovered = [...current.discoveredClues, ...newClues]
-          const newlyUnlocked = computeNewlyUnlockedParts(current.completedParts, updatedDiscovered)
-          const newProgress: ReaderProgress = {
-            discoveredClues: updatedDiscovered,
-            completedParts: [...current.completedParts, ...newlyUnlocked]
-          }
-          setProgress(newProgress)
-          progressRef.current = newProgress
-          saveProgress(newProgress)
-          const firstClue = story.clues.find(c => c.id === newClues[0])
-          setNewClueFound(firstClue?.content ?? 'Un nouvel indice a été révélé.')
-        }
-      }
-    } catch (error) {
-      console.error('Erreur indices:', error)
+    // Phase 4 — l'histoire est terminée
+    if (storyJustCompleted) {
+      setSessionEnded(true)
     }
   }
 
@@ -376,12 +433,10 @@ export default function ConversationPage() {
   // ─── Rendu ────────────────────────────────────────────────────────────────
 
   if (!character) {
-    return (
-      <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>
-        Personnage introuvable.
-      </div>
-    )
+    return <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>Personnage introuvable.</div>
   }
+
+  const isComplete = progress.isStoryComplete
 
   return (
     <div style={{
@@ -410,9 +465,62 @@ export default function ConversationPage() {
           fontStyle: 'italic',
           padding: '0.75rem 1.5rem',
           borderRadius: '2px',
-          zIndex: 100
+          zIndex: 100,
+          maxWidth: '90vw',
+          textAlign: 'center'
         }}>
           {newClueFound}
+        </div>
+      )}
+
+      {/* Notification fin d'histoire (Phase 4) */}
+      {isComplete && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(26, 24, 20, 0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 200
+        }}>
+          <div style={{
+            background: '#f7f4ef',
+            padding: '3rem',
+            borderRadius: '3px',
+            maxWidth: '420px',
+            textAlign: 'center'
+          }}>
+            <p style={{
+              fontFamily: "'Cormorant Garamond', Georgia, serif",
+              fontSize: 'clamp(20px, 2.4vw, 26px)',
+              fontWeight: 300,
+              color: '#1a1814',
+              lineHeight: 1.7,
+              marginBottom: '2rem',
+              whiteSpace: 'pre-line'
+            }}>
+              {story.epilogueMessage}
+            </p>
+            <button
+              onClick={() => router.push(`/lieu/${locationId}`)}
+              style={{
+                fontFamily: "'Raleway', sans-serif",
+                fontSize: '14px',
+                fontWeight: 500,
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                color: '#8b6f47',
+                background: 'none',
+                border: '1px solid #d4cfc6',
+                borderRadius: '2px',
+                padding: '0.75rem 1.5rem',
+                cursor: 'pointer'
+              }}
+            >
+              Fermer
+            </button>
+          </div>
         </div>
       )}
 
@@ -453,13 +561,16 @@ export default function ConversationPage() {
         }}>
           {character.name}
         </span>
+        {/* Phase 3 — heure diégétique */}
         <span style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(14px, 1.5vw, 16px)',
+          fontSize: 'clamp(12px, 1.3vw, 14px)',
           fontStyle: 'italic',
-          color: '#8a8680'
+          color: '#8a8680',
+          textAlign: 'right',
+          maxWidth: '140px'
         }}>
-          {visitLabel(completedEncounters, 'header')}
+          {diegeticTime || visitLabel(completedEncounters)}
         </span>
       </div>
 
@@ -472,18 +583,11 @@ export default function ConversationPage() {
         width: '100%',
         margin: '0 auto'
       }}>
-        <div style={{
-          textAlign: 'center',
-          margin: '0 0 2rem',
-          position: 'relative'
-        }}>
+        {/* Divider relation */}
+        <div style={{ textAlign: 'center', margin: '0 0 2rem', position: 'relative' }}>
           <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: 0,
-            right: 0,
-            height: '1px',
-            background: '#d4cfc6'
+            position: 'absolute', top: '50%', left: 0, right: 0,
+            height: '1px', background: '#d4cfc6'
           }} />
           <span style={{
             position: 'relative',
@@ -500,11 +604,7 @@ export default function ConversationPage() {
         </div>
 
         {messages.map((message, i) => (
-          <MessageBubble
-            key={i}
-            message={message}
-            characterName={character.name}
-          />
+          <MessageBubble key={i} message={message} characterName={character.name} />
         ))}
 
         {isLoading && (
@@ -523,9 +623,7 @@ export default function ConversationPage() {
             <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{
-                  width: '4px',
-                  height: '4px',
-                  borderRadius: '50%',
+                  width: '4px', height: '4px', borderRadius: '50%',
                   background: '#c4a882',
                   animation: `dot 1.2s infinite ease-in-out ${i * 0.2}s`
                 }} />
@@ -545,67 +643,87 @@ export default function ConversationPage() {
       }}>
         <div style={{ maxWidth: '680px', margin: '0 auto' }}>
           <TrustBar value={trust} characterName={character.name} />
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => {
-                setInput(e.target.value)
-                autoResize(e.target)
-              }}
-              onKeyDown={handleKey}
-              placeholder="Dites quelque chose…"
-              rows={1}
-              style={{
-                flex: 1,
-                fontFamily: "'Raleway', sans-serif",
-                fontSize: 'clamp(14px, 1.6vw, 16px)',
-                fontWeight: 300,
-                color: '#1a1814',
-                background: '#ede9e2',
-                border: '1px solid #d4cfc6',
-                borderRadius: '2px',
-                padding: '0.75rem 1rem',
-                resize: 'none',
-                outline: 'none',
-                minHeight: '44px',
-                maxHeight: '120px',
-                lineHeight: '1.5'
-              }}
-            />
-            <button
-              onClick={sendMessage}
-              disabled={isLoading || !input.trim()}
-              style={{
-                fontFamily: "'Raleway', sans-serif",
-                fontSize: 'clamp(13px, 1.4vw, 14px)',
-                fontWeight: 500,
-                letterSpacing: '0.2em',
-                textTransform: 'uppercase',
-                color: '#8b6f47',
-                background: 'none',
-                border: '1px solid #d4cfc6',
-                borderRadius: '2px',
-                padding: '0.75rem 1.25rem',
-                cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap',
-                height: '44px',
-                opacity: isLoading || !input.trim() ? 0.4 : 1
-              }}
-            >
-              Envoyer
-            </button>
-          </div>
-          <p style={{
-            fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: 'clamp(14px, 1.5vw, 16px)',
-            fontStyle: 'italic',
-            color: '#8a8680',
-            marginTop: '0.6rem',
-            textAlign: 'center'
-          }}>
-            Prenez le temps. Elle remarque comment vous l'écoutez.
-          </p>
+
+          {sessionEnded && !isComplete ? (
+            /* Phase 4 — Fatigue diégétique : session terminée par le personnage */
+            <p style={{
+              fontFamily: "'Cormorant Garamond', Georgia, serif",
+              fontSize: 'clamp(15px, 1.7vw, 17px)',
+              fontStyle: 'italic',
+              color: '#8a8680',
+              textAlign: 'center',
+              padding: '0.75rem 0'
+            }}>
+              La conversation s'est refermée. Revenez une autre fois.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => {
+                  setInput(e.target.value)
+                  autoResize(e.target)
+                }}
+                onKeyDown={handleKey}
+                disabled={isLoading || sessionEnded}
+                placeholder="Dites quelque chose…"
+                rows={1}
+                style={{
+                  flex: 1,
+                  fontFamily: "'Raleway', sans-serif",
+                  fontSize: 'clamp(14px, 1.6vw, 16px)',
+                  fontWeight: 300,
+                  color: '#1a1814',
+                  background: '#ede9e2',
+                  border: '1px solid #d4cfc6',
+                  borderRadius: '2px',
+                  padding: '0.75rem 1rem',
+                  resize: 'none',
+                  outline: 'none',
+                  minHeight: '44px',
+                  maxHeight: '120px',
+                  lineHeight: '1.5',
+                  opacity: sessionEnded ? 0.4 : 1
+                }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={isLoading || !input.trim() || sessionEnded}
+                style={{
+                  fontFamily: "'Raleway', sans-serif",
+                  fontSize: 'clamp(13px, 1.4vw, 14px)',
+                  fontWeight: 500,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#8b6f47',
+                  background: 'none',
+                  border: '1px solid #d4cfc6',
+                  borderRadius: '2px',
+                  padding: '0.75rem 1.25rem',
+                  cursor: (isLoading || !input.trim() || sessionEnded) ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  height: '44px',
+                  opacity: (isLoading || !input.trim() || sessionEnded) ? 0.4 : 1
+                }}
+              >
+                Envoyer
+              </button>
+            </div>
+          )}
+
+          {!sessionEnded && (
+            <p style={{
+              fontFamily: "'Cormorant Garamond', Georgia, serif",
+              fontSize: 'clamp(14px, 1.5vw, 16px)',
+              fontStyle: 'italic',
+              color: '#8a8680',
+              marginTop: '0.6rem',
+              textAlign: 'center'
+            }}>
+              Prenez le temps. {character.pronoun === 'il' ? 'Il' : 'Elle'} remarque comment vous l'écoutez.
+            </p>
+          )}
         </div>
       </div>
 

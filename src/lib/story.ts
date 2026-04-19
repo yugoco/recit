@@ -2,8 +2,8 @@ import { locations } from './locations'
 
 export interface Clue {
     id: string
-    revealedBy: string // characterId
-    content: string    // ce que le lecteur a appris
+    revealedBy: string
+    content: string
     trustRequired: number
 }
 
@@ -11,13 +11,15 @@ export interface Part {
     id: string
     title: string
     unlockedByDefault: boolean
-    requiredClues: string[] // ids des indices nécessaires pour débloquer la partie suivante
+    requiredClues: string[]
+    // Phase 4 — l'épilogue marque la fin de l'œuvre
+    isEpilogue?: boolean
 }
 
 export interface CharacterRelation {
     knowsAbout: string[]
     sharedEvents: string[]
-    canReactTo: Record<string, string> // characterId → instruction pour le system prompt
+    canReactTo: Record<string, string>
 }
 
 export interface Story {
@@ -25,6 +27,7 @@ export interface Story {
     parts: Part[]
     clues: Clue[]
     characterRelations: Record<string, CharacterRelation>
+    epilogueMessage: string // message affiché quand isStoryComplete devient true
 }
 
 export const story: Story = {
@@ -33,6 +36,10 @@ export const story: Story = {
   Ceci est ce qui s'est réellement passé. Cette version n'est jamais montrée 
   directement au lecteur — elle est la mesure contre laquelle on évalue 
   ce que le lecteur a découvert.`,
+
+    epilogueMessage: `Vous avez percé le secret d'Élise Moreau.
+Ce que vous avez trouvé ne peut pas être défait.
+L'histoire se referme ici — mais vous pouvez relire ce qui s'est dit.`,
 
     parts: [
         {
@@ -51,7 +58,8 @@ export const story: Story = {
             id: 'part-3',
             title: 'Le cœur',
             unlockedByDefault: false,
-            requiredClues: []
+            requiredClues: [],
+            isEpilogue: true // Phase 4 — débloquer cette partie clôt l'œuvre
         }
     ],
 
@@ -108,6 +116,8 @@ avant de donner ta version — plus factuelle, moins chargée émotionnellement.
     }
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 export function getCluesForCharacter(characterId: string): Clue[] {
     return story.clues.filter(c => c.revealedBy === characterId)
 }
@@ -116,46 +126,27 @@ export function getRelation(characterId: string): CharacterRelation | undefined 
     return story.characterRelations[characterId]
 }
 
-/**
- * Détecte quels personnages sont mentionnés dans le message du lecteur.
- * On matche sur le nom affiché du personnage (ex: "Thomas"), pas sur l'ID technique.
- * On vérifie aussi que le match est un mot entier (pas une sous-chaîne accidentelle).
- */
 export function detectMentionedCharacters(userInput: string): string[] {
     const mentioned: string[] = []
     const input = userInput.toLowerCase()
 
     Object.keys(story.characterRelations).forEach(charId => {
-        // Trouver le nom affiché du personnage dans toutes les locations
         let displayName: string | undefined
         for (const location of locations) {
             const character = location.characters.find(c => c.id === charId)
-            if (character) {
-                displayName = character.name
-                break
-            }
+            if (character) { displayName = character.name; break }
         }
-
         if (!displayName) return
 
-        // Matcher sur le nom affiché, mot entier, insensible à la casse et aux accents
-        const nameNormalized = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const nameNormalized  = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
         const inputNormalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
-        // \b assure un match sur mot entier — évite "marc" dans "remarque"
         const regex = new RegExp(`\\b${nameNormalized}\\b`)
-        if (regex.test(inputNormalized)) {
-            mentioned.push(charId)
-        }
+        if (regex.test(inputNormalized)) mentioned.push(charId)
     })
 
     return mentioned
 }
 
-/**
- * Vérifie si une partie narrative est débloquée.
- * La logique est centralisée ici — detectClues dans page.tsx doit appeler cette fonction.
- */
 export function isPartUnlocked(partId: string, discoveredClues: string[]): boolean {
     const part = story.parts.find(p => p.id === partId)
     if (!part) return false
@@ -167,10 +158,6 @@ export function isPartUnlocked(partId: string, discoveredClues: string[]): boole
     return previousPart.requiredClues.every(clueId => discoveredClues.includes(clueId))
 }
 
-/**
- * Calcule quelles parties passent de verrouillées à débloquées
- * suite à l'ajout de nouveaux indices.
- */
 export function computeNewlyUnlockedParts(
     completedParts: string[],
     discoveredClues: string[]
@@ -186,4 +173,15 @@ export function computeNewlyUnlockedParts(
         }
     })
     return newlyUnlocked
+}
+
+/**
+ * Phase 4 — Vérifie si l'épilogue vient d'être débloqué.
+ * Retourne true si une des parties nouvellement débloquées est marquée isEpilogue.
+ */
+export function checkStoryComplete(newlyUnlockedPartIds: string[]): boolean {
+    return newlyUnlockedPartIds.some(id => {
+        const part = story.parts.find(p => p.id === id)
+        return part?.isEpilogue === true
+    })
 }
