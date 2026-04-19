@@ -1,8 +1,10 @@
+import { locations } from './locations'
+
 export interface Clue {
     id: string
     revealedBy: string // characterId
-    content: string // ce que le lecteur a appris
-    trustRequired: number // seuil de confiance nécessaire
+    content: string    // ce que le lecteur a appris
+    trustRequired: number
 }
 
 export interface Part {
@@ -13,8 +15,8 @@ export interface Part {
 }
 
 export interface CharacterRelation {
-    knowsAbout: string[] // characterIds qu'il connaît
-    sharedEvents: string[] // événements en commun
+    knowsAbout: string[]
+    sharedEvents: string[]
     canReactTo: Record<string, string> // characterId → instruction pour le system prompt
 }
 
@@ -37,19 +39,19 @@ export const story: Story = {
             id: 'part-1',
             title: 'Les apparences',
             unlockedByDefault: true,
-            requiredClues: ['clue-1', 'clue-2'] // ces deux indices débloquent la partie 2
+            requiredClues: ['clue-1', 'clue-2']
         },
         {
             id: 'part-2',
             title: 'Les fissures',
             unlockedByDefault: false,
-            requiredClues: ['clue-3', 'clue-4'] // ces indices débloquent la fin
+            requiredClues: ['clue-3', 'clue-4']
         },
         {
             id: 'part-3',
             title: 'Le cœur',
             unlockedByDefault: false,
-            requiredClues: [] // fin — pas d'autres déblocages
+            requiredClues: []
         }
     ],
 
@@ -114,24 +116,74 @@ export function getRelation(characterId: string): CharacterRelation | undefined 
     return story.characterRelations[characterId]
 }
 
-export function getNextPart(discoveredClues: string[]): Part | undefined {
-    return story.parts.find(part =>
-        !part.unlockedByDefault &&
-        part.requiredClues.every(clueId =>
-            // La partie précédente est complète si tous ses indices requis sont découverts
-            discoveredClues.includes(clueId)
-        )
-    )
+/**
+ * Détecte quels personnages sont mentionnés dans le message du lecteur.
+ * On matche sur le nom affiché du personnage (ex: "Thomas"), pas sur l'ID technique.
+ * On vérifie aussi que le match est un mot entier (pas une sous-chaîne accidentelle).
+ */
+export function detectMentionedCharacters(userInput: string): string[] {
+    const mentioned: string[] = []
+    const input = userInput.toLowerCase()
+
+    Object.keys(story.characterRelations).forEach(charId => {
+        // Trouver le nom affiché du personnage dans toutes les locations
+        let displayName: string | undefined
+        for (const location of locations) {
+            const character = location.characters.find(c => c.id === charId)
+            if (character) {
+                displayName = character.name
+                break
+            }
+        }
+
+        if (!displayName) return
+
+        // Matcher sur le nom affiché, mot entier, insensible à la casse et aux accents
+        const nameNormalized = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const inputNormalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+        // \b assure un match sur mot entier — évite "marc" dans "remarque"
+        const regex = new RegExp(`\\b${nameNormalized}\\b`)
+        if (regex.test(inputNormalized)) {
+            mentioned.push(charId)
+        }
+    })
+
+    return mentioned
 }
 
+/**
+ * Vérifie si une partie narrative est débloquée.
+ * La logique est centralisée ici — detectClues dans page.tsx doit appeler cette fonction.
+ */
 export function isPartUnlocked(partId: string, discoveredClues: string[]): boolean {
     const part = story.parts.find(p => p.id === partId)
     if (!part) return false
     if (part.unlockedByDefault) return true
 
-    // Trouver la partie précédente et vérifier que ses indices sont tous découverts
     const partIndex = story.parts.findIndex(p => p.id === partId)
     if (partIndex === 0) return true
     const previousPart = story.parts[partIndex - 1]
     return previousPart.requiredClues.every(clueId => discoveredClues.includes(clueId))
+}
+
+/**
+ * Calcule quelles parties passent de verrouillées à débloquées
+ * suite à l'ajout de nouveaux indices.
+ */
+export function computeNewlyUnlockedParts(
+    completedParts: string[],
+    discoveredClues: string[]
+): string[] {
+    const newlyUnlocked: string[] = []
+    story.parts.forEach(part => {
+        if (
+            !part.unlockedByDefault &&
+            !completedParts.includes(part.id) &&
+            isPartUnlocked(part.id, discoveredClues)
+        ) {
+            newlyUnlocked.push(part.id)
+        }
+    })
+    return newlyUnlocked
 }

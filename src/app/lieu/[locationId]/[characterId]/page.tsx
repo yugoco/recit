@@ -3,21 +3,31 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCharacter } from '@/lib/locations'
-import { getRelation, isPartUnlocked, story } from '@/lib/story'
-import { Message, ReaderProgress } from '@/lib/types'
+import { getRelation, story, detectMentionedCharacters, computeNewlyUnlockedParts } from '@/lib/story'
+import { Message, ReaderProgress, ChatRequest } from '@/lib/types'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
+
+// ─── Clés localStorage ────────────────────────────────────────────────────────
+
+function trustKey(locationId: string, characterId: string) {
+  return `recit_trust_${locationId}_${characterId}`
+}
+function encountersKey(locationId: string, characterId: string) {
+  return `recit_encounters_${locationId}_${characterId}`
+}
+function contextKey(locationId: string, characterId: string) {
+  return `recit_last_context_${locationId}_${characterId}`
+}
+
+// ─── Progress ─────────────────────────────────────────────────────────────────
 
 function loadProgress(): ReaderProgress {
   try {
     const saved = localStorage.getItem('recit_progress')
-    return saved ? JSON.parse(saved) : {
-      discoveredClues: [],
-      completedParts: [],
-      revealedInfo: {}
-    }
+    return saved ? JSON.parse(saved) : { discoveredClues: [], completedParts: [] }
   } catch {
-    return { discoveredClues: [], completedParts: [], revealedInfo: {} }
+    return { discoveredClues: [], completedParts: [] }
   }
 }
 
@@ -25,15 +35,63 @@ function saveProgress(progress: ReaderProgress) {
   localStorage.setItem('recit_progress', JSON.stringify(progress))
 }
 
-function detectMentionedCharacters(userInput: string): string[] {
-  const mentioned: string[] = []
-  story.characterRelations && Object.keys(story.characterRelations).forEach(charId => {
-    if (userInput.toLowerCase().includes(charId.toLowerCase())) {
-      mentioned.push(charId)
-    }
-  })
-  return mentioned
+// ─── Sauvegarde de fin de session ─────────────────────────────────────────────
+
+function saveSession(
+  locationId: string,
+  characterId: string,
+  messages: Message[],
+  characterName: string
+) {
+  if (messages.length === 0) return
+
+  // Lire le compteur actuel et incrémenter
+  const key = encountersKey(locationId, characterId)
+  const previous = parseInt(localStorage.getItem(key) ?? '0')
+  localStorage.setItem(key, (previous + 1).toString())
+
+  // Sauvegarder le contexte des 8 derniers messages
+  const summary = messages
+    .slice(-8)
+    .map(m => `${m.role === 'user' ? 'Lecteur' : characterName}: ${m.content}`)
+    .join('\n')
+  localStorage.setItem(contextKey(locationId, characterId), summary)
 }
+
+// ─── Label de visite ──────────────────────────────────────────────────────────
+
+/**
+ * États de la relation selon les visites complétées et le niveau de confiance.
+ * Le divider au-dessus des messages reflète l'état de la relation narrativement.
+ */
+function relationLabel(completedEncounters: number, trust: number, pronoun: 'elle' | 'il'): string {
+  const p = pronoun
+  if (completedEncounters === 0) {
+    return 'Première visite'
+  }
+  if (completedEncounters === 1 && trust < 40) {
+    return `${p === 'elle' ? 'Elle' : 'Il'} se souvient de vous`
+  }
+  if (completedEncounters <= 3 && trust < 65) {
+    return `${p === 'elle' ? 'Elle' : 'Il'} commence à vous reconnaître`
+  }
+  if (trust >= 65) {
+    return `${p === 'elle' ? 'Elle' : 'Il'} vous fait confiance`
+  }
+  return `${p === 'elle' ? 'Elle' : 'Il'} se souvient de vous`
+}
+
+function visitLabel(completedEncounters: number, position: 'list' | 'header'): string {
+  if (completedEncounters === 0) {
+    if (position === 'list') return 'inconnu·e'
+    return 'première visite'
+  }
+  const current = completedEncounters + 1
+  if (position === 'list') return `${completedEncounters} visite${completedEncounters > 1 ? 's' : ''}`
+  return `visite ${current}`
+}
+
+// ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function ConversationPage() {
   const params = useParams()
@@ -46,66 +104,74 @@ export default function ConversationPage() {
   const [trust, setTrust] = useState(10)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [encounterCount, setEncounterCount] = useState(0)
+  // Nombre de visites COMPLÉTÉES au moment où on entre dans la page
+  const [completedEncounters, setCompletedEncounters] = useState(0)
   const [progress, setProgress] = useState<ReaderProgress>({
     discoveredClues: [],
-    completedParts: [],
-    revealedInfo: {}
+    completedParts: []
   })
   const [newClueFound, setNewClueFound] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hasInitialized = useRef(false)
+  const hasSavedSession = useRef(false)
   const lastContextRef = useRef<string>('')
   const messagesRef = useRef<Message[]>([])
   const characterRef = useRef(character)
+  // Ref pour trust — évite les closures périmées dans evaluateTrust / detectClues
+  const trustRef = useRef(10)
+  const progressRef = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [] })
 
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { trustRef.current = trust }, [trust])
+  useEffect(() => { progressRef.current = progress }, [progress])
+
+  // ─── Initialisation ───────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!character || hasInitialized.current) return
     hasInitialized.current = true
-
-    const savedTrust = localStorage.getItem(`recit_trust_${locationId}_${characterId}`)
-    const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
-    const currentTrust = savedTrust ? parseInt(savedTrust) : 10
-    const currentEncounters = savedEncounters ? parseInt(savedEncounters) : 0
-
-    setTrust(currentTrust)
-    setEncounterCount(currentEncounters + 1)
-    setProgress(loadProgress())
-
-    const savedContext = localStorage.getItem(`recit_last_context_${locationId}_${characterId}`) || ''
-    lastContextRef.current = savedContext
     characterRef.current = character
 
+    const savedTrust = localStorage.getItem(trustKey(locationId, characterId))
+    const savedEncounters = localStorage.getItem(encountersKey(locationId, characterId))
+    const currentTrust = savedTrust ? parseInt(savedTrust) : 10
+    const completed = savedEncounters ? parseInt(savedEncounters) : 0
+
+    setTrust(currentTrust)
+    trustRef.current = currentTrust
+    setCompletedEncounters(completed)
+
+    const initialProgress = loadProgress()
+    setProgress(initialProgress)
+    progressRef.current = initialProgress
+
+    const savedContext = localStorage.getItem(contextKey(locationId, characterId)) ?? ''
+    lastContextRef.current = savedContext
+
     if (savedContext) {
+      // Visite de retour — le personnage ouvre avec un message mémoriel
       setIsLoading(true)
+      const body: ChatRequest = {
+        locationId,
+        characterId,
+        messages: [],
+        trustLevel: currentTrust,
+        lastContext: savedContext,
+        openingMessage: true,
+        discoveredClues: initialProgress.discoveredClues,
+        mentionedCharacters: []
+      }
       fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          characterId,
-          messages: [],
-          trustLevel: currentTrust,
-          lastContext: savedContext,
-          openingMessage: true,
-          discoveredClues: loadProgress().discoveredClues,
-          mentionedCharacters: []
-        })
+        body: JSON.stringify(body)
       })
         .then(r => r.json())
         .then(data => {
           if (data.reply) {
-            const opening: Message = {
-              role: 'assistant',
-              content: data.reply,
-              timestamp: Date.now()
-            }
+            const opening: Message = { role: 'assistant', content: data.reply, timestamp: Date.now() }
             setMessages([opening])
             messagesRef.current = [opening]
             lastContextRef.current = ''
@@ -114,44 +180,33 @@ export default function ConversationPage() {
         })
         .catch(() => setIsLoading(false))
     } else {
-      const intro: Message = {
-        role: 'assistant',
-        content: character.intro,
-        timestamp: Date.now()
-      }
+      // Première visite — intro statique
+      const intro: Message = { role: 'assistant', content: character.intro, timestamp: Date.now() }
       setMessages([intro])
       messagesRef.current = [intro]
     }
   }, [locationId, characterId, character])
 
+  // ─── Sauvegarde au déchargement (fermeture onglet, navigation externe) ────
+
   useEffect(() => {
     const handleUnload = () => {
-      const currentMessages = messagesRef.current
-      if (currentMessages.length === 0) return
-
-      const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
-      const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
-      localStorage.setItem(
-        `recit_encounters_${locationId}_${characterId}`,
-        (previousEncounters + 1).toString()
-      )
-
-      const lastExchange = currentMessages.slice(-8)
-      const summary = lastExchange
-        .map(m => `${m.role === 'user' ? 'Lecteur' : characterRef.current?.name}: ${m.content}`)
-        .join('\n')
-      localStorage.setItem(`recit_last_context_${locationId}_${characterId}`, summary)
+      if (hasSavedSession.current) return
+      hasSavedSession.current = true
+      saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
     }
-
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [locationId, characterId])
+
+  // ─── Scroll automatique ───────────────────────────────────────────────────
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Masquer la notification d'indice après 4 secondes
+  // ─── Notification d'indice ────────────────────────────────────────────────
+
   useEffect(() => {
     if (newClueFound) {
       const timer = setTimeout(() => setNewClueFound(null), 4000)
@@ -159,67 +214,48 @@ export default function ConversationPage() {
     }
   }, [newClueFound])
 
+  // ─── Quitter ──────────────────────────────────────────────────────────────
+
   function saveAndLeave() {
-    const currentMessages = messagesRef.current
-    if (currentMessages.length > 0) {
-      const savedEncounters = localStorage.getItem(`recit_encounters_${locationId}_${characterId}`)
-      const previousEncounters = savedEncounters ? parseInt(savedEncounters) : 0
-      localStorage.setItem(
-        `recit_encounters_${locationId}_${characterId}`,
-        (previousEncounters + 1).toString()
-      )
-      const lastExchange = currentMessages.slice(-8)
-      const summary = lastExchange
-        .map(m => `${m.role === 'user' ? 'Lecteur' : characterRef.current?.name}: ${m.content}`)
-        .join('\n')
-      localStorage.setItem(`recit_last_context_${locationId}_${characterId}`, summary)
+    if (!hasSavedSession.current) {
+      hasSavedSession.current = true
+      saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
     }
     router.push(`/lieu/${locationId}`)
   }
 
-  if (!character) {
-    return (
-      <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>
-        Personnage introuvable.
-      </div>
-    )
-  }
+  // ─── Envoi d'un message ───────────────────────────────────────────────────
 
   async function sendMessage() {
     if (!input.trim() || isLoading) return
 
-    const userMessage: Message = {
-      role: 'user',
-      content: input.trim(),
-      timestamp: Date.now()
-    }
-
+    const userMessage: Message = { role: 'user', content: input.trim(), timestamp: Date.now() }
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
     setInput('')
     setIsLoading(true)
 
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     const mentionedCharacters = detectMentionedCharacters(userMessage.content)
     const lastContext = lastContextRef.current
     lastContextRef.current = ''
 
     try {
+      const body: ChatRequest = {
+        locationId,
+        characterId,
+        messages: updatedMessages.slice(-20),
+        trustLevel: trustRef.current,
+        lastContext,
+        discoveredClues: progressRef.current.discoveredClues,
+        mentionedCharacters
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          characterId,
-          messages: updatedMessages.slice(-20),
-          trustLevel: trust,
-          lastContext,
-          discoveredClues: progress.discoveredClues,
-          mentionedCharacters
-        })
+        body: JSON.stringify(body)
       })
 
       const data = await response.json()
@@ -230,24 +266,20 @@ export default function ConversationPage() {
           content: data.reply,
           timestamp: Date.now()
         }
-
         const finalMessages = [...updatedMessages, assistantMessage]
         setMessages(finalMessages)
-        localStorage.setItem(
-          `recit_messages_${locationId}_${characterId}`,
-          JSON.stringify(finalMessages)
-        )
 
-        // Lancer trust et clues en parallèle
-        evaluateTrust(userMessage.content, data.reply)
+        // Évaluer la confiance en premier, puis passer le nouveau niveau à detectClues
+        const newTrust = await evaluateTrust(userMessage.content, data.reply)
 
+        const effectiveTrust = newTrust ?? trustRef.current
         const hasAvailableClues = story.clues.some(clue =>
           clue.revealedBy === characterId &&
-          trust >= clue.trustRequired &&
-          !progress.discoveredClues.includes(clue.id)
+          effectiveTrust >= clue.trustRequired &&
+          !progressRef.current.discoveredClues.includes(clue.id)
         )
         if (hasAvailableClues) {
-          detectClues(data.reply)
+          await detectClues(data.reply, effectiveTrust)
         }
       }
     } catch (error) {
@@ -257,7 +289,9 @@ export default function ConversationPage() {
     setIsLoading(false)
   }
 
-  async function evaluateTrust(userInput: string, characterReply: string) {
+  // ─── Évaluation de confiance — retourne le nouveau niveau ────────────────
+
+  async function evaluateTrust(userInput: string, characterReply: string): Promise<number | null> {
     try {
       const response = await fetch('/api/trust', {
         method: 'POST',
@@ -267,21 +301,26 @@ export default function ConversationPage() {
           characterId,
           userInput,
           characterReply,
-          currentTrust: trust
+          currentTrust: trustRef.current
         })
       })
       const data = await response.json()
       if (typeof data.delta === 'number') {
-        const newTrust = Math.max(0, Math.min(100, trust + data.delta))
+        const newTrust = Math.max(0, Math.min(100, trustRef.current + data.delta))
         setTrust(newTrust)
-        localStorage.setItem(`recit_trust_${locationId}_${characterId}`, newTrust.toString())
+        trustRef.current = newTrust
+        localStorage.setItem(trustKey(locationId, characterId), newTrust.toString())
+        return newTrust
       }
     } catch (error) {
       console.error('Erreur confiance:', error)
     }
+    return null
   }
 
-  async function detectClues(characterReply: string) {
+  // ─── Détection d'indices — prend le trust effectif en paramètre ───────────
+
+  async function detectClues(characterReply: string, effectiveTrust: number) {
     try {
       const response = await fetch('/api/clues', {
         method: 'POST',
@@ -289,44 +328,38 @@ export default function ConversationPage() {
         body: JSON.stringify({
           characterId,
           characterReply,
-          currentTrust: trust,
-          alreadyDiscovered: progress.discoveredClues
+          currentTrust: effectiveTrust,
+          alreadyDiscovered: progressRef.current.discoveredClues
         })
       })
       const data = await response.json()
 
       if (data.discoveredClueIds?.length > 0) {
-        const newProgress = { ...progress }
-        let foundNew = false
+        const current = progressRef.current
+        const newClues = (data.discoveredClueIds as string[]).filter(
+          id => !current.discoveredClues.includes(id)
+        )
 
-        data.discoveredClueIds.forEach((clueId: string) => {
-          if (!newProgress.discoveredClues.includes(clueId)) {
-            newProgress.discoveredClues.push(clueId)
-            foundNew = true
+        if (newClues.length > 0) {
+          const updatedDiscovered = [...current.discoveredClues, ...newClues]
+          const newlyUnlocked = computeNewlyUnlockedParts(current.completedParts, updatedDiscovered)
+          const newProgress: ReaderProgress = {
+            discoveredClues: updatedDiscovered,
+            completedParts: [...current.completedParts, ...newlyUnlocked]
           }
-        })
-
-        if (foundNew) {
-          // Vérifier si une nouvelle partie est débloquée
-          story.parts.forEach(part => {
-            if (
-              !newProgress.completedParts.includes(part.id) &&
-              part.requiredClues.length > 0 &&
-              part.requiredClues.every(id => newProgress.discoveredClues.includes(id))
-            ) {
-              newProgress.completedParts.push(part.id)
-            }
-          })
-
           setProgress(newProgress)
+          progressRef.current = newProgress
           saveProgress(newProgress)
-          setNewClueFound('Un nouvel indice a été révélé.')
+          const firstClue = story.clues.find(c => c.id === newClues[0])
+          setNewClueFound(firstClue?.content ?? 'Un nouvel indice a été révélé.')
         }
       }
     } catch (error) {
       console.error('Erreur indices:', error)
     }
   }
+
+  // ─── Handlers UI ──────────────────────────────────────────────────────────
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -340,7 +373,15 @@ export default function ConversationPage() {
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
   }
 
-  const isFirstEncounter = encounterCount <= 1
+  // ─── Rendu ────────────────────────────────────────────────────────────────
+
+  if (!character) {
+    return (
+      <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>
+        Personnage introuvable.
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -365,13 +406,11 @@ export default function ConversationPage() {
           background: '#1a1814',
           color: '#f7f4ef',
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '13px',
+          fontSize: 'clamp(14px, 1.6vw, 16px)',
           fontStyle: 'italic',
           padding: '0.75rem 1.5rem',
           borderRadius: '2px',
-          zIndex: 100,
-          opacity: 1,
-          transition: 'opacity 0.5s ease'
+          zIndex: 100
         }}>
           {newClueFound}
         </div>
@@ -393,7 +432,7 @@ export default function ConversationPage() {
           onClick={saveAndLeave}
           style={{
             fontFamily: "'Raleway', sans-serif",
-            fontSize: '11px',
+            fontSize: 'clamp(14px, 1.5vw, 15px)',
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
@@ -408,7 +447,7 @@ export default function ConversationPage() {
         </button>
         <span style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '22px',
+          fontSize: 'clamp(20px, 2.4vw, 26px)',
           fontWeight: 300,
           color: '#1a1814'
         }}>
@@ -416,11 +455,11 @@ export default function ConversationPage() {
         </span>
         <span style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '12px',
+          fontSize: 'clamp(14px, 1.5vw, 16px)',
           fontStyle: 'italic',
           color: '#8a8680'
         }}>
-          {isFirstEncounter ? 'première rencontre' : `rencontre ${encounterCount}`}
+          {visitLabel(completedEncounters, 'header')}
         </span>
       </div>
 
@@ -451,14 +490,12 @@ export default function ConversationPage() {
             background: '#f7f4ef',
             padding: '0 1rem',
             fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: '11px',
+            fontSize: 'clamp(14px, 1.5vw, 16px)',
             fontStyle: 'italic',
             color: '#8a8680',
             letterSpacing: '0.1em'
           }}>
-            {isFirstEncounter
-              ? 'Première rencontre'
-              : `Rencontre ${encounterCount} — elle se souvient de vous`}
+            {relationLabel(completedEncounters, trust, character.pronoun ?? 'elle')}
           </span>
         </div>
 
@@ -474,7 +511,7 @@ export default function ConversationPage() {
           <div style={{ marginBottom: '2rem' }}>
             <div style={{
               fontFamily: "'Raleway', sans-serif",
-              fontSize: '10px',
+              fontSize: '14px',
               fontWeight: 500,
               letterSpacing: '0.2em',
               textTransform: 'uppercase',
@@ -522,7 +559,7 @@ export default function ConversationPage() {
               style={{
                 flex: 1,
                 fontFamily: "'Raleway', sans-serif",
-                fontSize: '14px',
+                fontSize: 'clamp(14px, 1.6vw, 16px)',
                 fontWeight: 300,
                 color: '#1a1814',
                 background: '#ede9e2',
@@ -541,7 +578,7 @@ export default function ConversationPage() {
               disabled={isLoading || !input.trim()}
               style={{
                 fontFamily: "'Raleway', sans-serif",
-                fontSize: '10px',
+                fontSize: 'clamp(13px, 1.4vw, 14px)',
                 fontWeight: 500,
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
@@ -561,7 +598,7 @@ export default function ConversationPage() {
           </div>
           <p style={{
             fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: '11px',
+            fontSize: 'clamp(14px, 1.5vw, 16px)',
             fontStyle: 'italic',
             color: '#8a8680',
             marginTop: '0.6rem',

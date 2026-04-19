@@ -12,6 +12,7 @@ export const locations: Location[] = [
         name: 'Élise',
         description: 'Médecin généraliste',
         available: true,
+        pronoun: 'elle',
         intro: `Elle lève les yeux de son bureau sans se presser, vous évalue un instant, puis pose son stylo.\n\n— Asseyez-vous. Je vous écoutais finir de monter l'escalier. Vous prenez votre temps, c'est bien.`,
         trustEvaluation: `Élise est une femme posée, intelligente, méfiante de la précipitation.
 Elle apprécie : les questions qui montrent une vraie curiosité pour elle en tant que personne (pas juste son métier), la douceur, la patience, les silences assumés, les remarques qui révèlent que le lecteur l'écoute vraiment.

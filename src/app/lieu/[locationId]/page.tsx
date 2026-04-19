@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getLocation } from '@/lib/locations'
 
+function encounterLabel(count: number): string {
+  if (count === 0) return 'inconnu·e'
+  return `${count} visite${count > 1 ? 's' : ''}`
+}
+
 export default function LocationPage() {
   const params = useParams()
   const router = useRouter()
@@ -50,7 +55,7 @@ export default function LocationPage() {
           onClick={() => router.push('/')}
           style={{
             fontFamily: "'Raleway', sans-serif",
-            fontSize: '11px',
+            fontSize: 'clamp(14px, 1.5vw, 15px)',
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
@@ -68,7 +73,7 @@ export default function LocationPage() {
 
         <h2 style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '64px',
+          fontSize: 'clamp(36px, 6vw, 56px)',
           fontWeight: 300,
           letterSpacing: '-0.02em',
           lineHeight: 1,
@@ -80,7 +85,7 @@ export default function LocationPage() {
 
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '17px',
+          fontSize: 'clamp(16px, 1.9vw, 19px)',
           fontWeight: 300,
           fontStyle: 'italic',
           color: '#4a4640',
@@ -99,7 +104,7 @@ export default function LocationPage() {
 
         <p style={{
           fontFamily: "'Raleway', sans-serif",
-          fontSize: '10px',
+          fontSize: 'clamp(13px, 1.4vw, 14px)',
           fontWeight: 500,
           letterSpacing: '0.2em',
           textTransform: 'uppercase',
@@ -116,12 +121,7 @@ export default function LocationPage() {
           marginBottom: '2.5rem'
         }}>
           {location.characters.map(character => {
-            const encounters = encounterCounts[character.id] ?? 0
-            const encounterLabel = encounters === 0
-              ? 'première rencontre'
-              : encounters === 1
-              ? 'une rencontre'
-              : `${encounters} rencontres`
+            const visits = encounterCounts[character.id] ?? 0
 
             if (!character.available) {
               return (
@@ -142,7 +142,7 @@ export default function LocationPage() {
                   <div>
                     <span style={{
                       fontFamily: "'Cormorant Garamond', Georgia, serif",
-                      fontSize: '20px',
+                      fontSize: 'clamp(18px, 2.1vw, 22px)',
                       fontWeight: 400,
                       color: '#1a1814',
                       display: 'block',
@@ -152,7 +152,7 @@ export default function LocationPage() {
                     </span>
                     <span style={{
                       fontFamily: "'Raleway', sans-serif",
-                      fontSize: '11px',
+                      fontSize: 'clamp(13px, 1.4vw, 14px)',
                       fontWeight: 300,
                       letterSpacing: '0.05em',
                       color: '#8a8680',
@@ -162,7 +162,7 @@ export default function LocationPage() {
                     </span>
                   </div>
                   <span style={{
-                    fontSize: '10px',
+                    fontSize: 'clamp(13px, 1.4vw, 14px)',
                     fontFamily: "'Raleway', sans-serif",
                     letterSpacing: '0.1em',
                     textTransform: 'uppercase' as const,
@@ -172,7 +172,7 @@ export default function LocationPage() {
                     borderRadius: '2px',
                     marginLeft: '1rem'
                   }}>
-                    bientôt
+                    absent·e
                   </span>
                 </div>
               )
@@ -205,7 +205,7 @@ export default function LocationPage() {
                 <div style={{ flex: 1, textAlign: 'left' }}>
                   <span style={{
                     fontFamily: "'Cormorant Garamond', Georgia, serif",
-                    fontSize: '20px',
+                    fontSize: 'clamp(18px, 2.1vw, 22px)',
                     fontWeight: 400,
                     color: '#1a1814',
                     display: 'block',
@@ -215,7 +215,7 @@ export default function LocationPage() {
                   </span>
                   <span style={{
                     fontFamily: "'Raleway', sans-serif",
-                    fontSize: '11px',
+                    fontSize: 'clamp(13px, 1.4vw, 14px)',
                     fontWeight: 300,
                     letterSpacing: '0.05em',
                     color: '#8a8680',
@@ -226,13 +226,13 @@ export default function LocationPage() {
                 </div>
                 <span style={{
                   fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: '12px',
+                  fontSize: 'clamp(14px, 1.5vw, 16px)',
                   fontStyle: 'italic',
                   color: '#8a8680',
                   marginRight: '1rem',
                   whiteSpace: 'nowrap'
                 }}>
-                  {encounterLabel}
+                  {encounterLabel(visits)}
                 </span>
                 <span style={{ fontSize: '16px', color: '#c4a882' }}>→</span>
               </div>
@@ -242,7 +242,7 @@ export default function LocationPage() {
 
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '13px',
+          fontSize: 'clamp(14px, 1.5vw, 16px)',
           fontStyle: 'italic',
           color: '#8a8680',
           lineHeight: 1.7

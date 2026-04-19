@@ -12,6 +12,7 @@ export interface Character {
   intro: string
   systemPrompt: string
   trustEvaluation: string
+  pronoun?: 'elle' | 'il'  // défaut : 'elle'
 }
 
 export interface Location {
@@ -23,7 +24,17 @@ export interface Location {
 }
 
 export interface ReaderProgress {
-  discoveredClues: string[]        // indices trouvés par le lecteur
-  completedParts: string[]         // parties terminées
-  revealedInfo: Record<string, string[]> // characterId → ce qu'il a révélé au lecteur
+  discoveredClues: string[]   // indices trouvés par le lecteur
+  completedParts: string[]    // parties débloquées
+}
+
+export interface ChatRequest {
+  locationId: string
+  characterId: string
+  messages: Message[]
+  trustLevel: number
+  lastContext: string
+  openingMessage?: boolean
+  discoveredClues: string[]
+  mentionedCharacters: string[]
 }

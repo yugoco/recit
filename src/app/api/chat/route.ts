@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { getCharacter } from '@/lib/locations'
 import { getCluesForCharacter, getRelation } from '@/lib/story'
-import { Message } from '@/lib/types'
+import { Message, ChatRequest } from '@/lib/types'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       openingMessage,
       discoveredClues,
       mentionedCharacters
-    } = await request.json()
+    }: ChatRequest = await request.json()
 
     const character = getCharacter(locationId, characterId)
     if (!character) {
@@ -61,8 +61,8 @@ ${mentionedCharacters
       + (cluesBlock ? `\n\n${cluesBlock}` : '')
       + (reactionsBlock ? `\n\n${reactionsBlock}` : '')
 
-    const formattedMessages = messages.length > 0
-      ? messages.map((m: Message) => ({ role: m.role, content: m.content }))
+    const formattedMessages: { role: 'user' | 'assistant'; content: string }[] = messages.length > 0
+      ? messages.map((m: Message) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
       : [{ role: 'user', content: '...' }]
 
     const response = await client.messages.create({

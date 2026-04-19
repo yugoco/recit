@@ -38,7 +38,7 @@ export default function Home() {
 
         <p style={{
           fontFamily: "'Raleway', sans-serif",
-          fontSize: '11px',
+          fontSize: 'clamp(13px, 1.4vw, 14px)',
           fontWeight: 400,
           letterSpacing: '0.25em',
           textTransform: 'uppercase',
@@ -50,7 +50,7 @@ export default function Home() {
 
         <h1 style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '64px',
+          fontSize: 'clamp(44px, 7vw, 64px)',
           fontWeight: 300,
           letterSpacing: '-0.02em',
           lineHeight: 1,
@@ -62,7 +62,7 @@ export default function Home() {
 
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '17px',
+          fontSize: 'clamp(16px, 1.9vw, 19px)',
           fontWeight: 300,
           fontStyle: 'italic',
           color: '#4a4640',
@@ -82,7 +82,7 @@ export default function Home() {
 
         <p style={{
           fontFamily: "'Raleway', sans-serif",
-          fontSize: '10px',
+          fontSize: 'clamp(13px, 1.4vw, 14px)',
           fontWeight: 500,
           letterSpacing: '0.2em',
           textTransform: 'uppercase',
@@ -118,17 +118,17 @@ export default function Home() {
                 }}
                 onMouseEnter={e => {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = '#c4a882'
-                    ; (e.currentTarget as HTMLButtonElement).style.background = '#f0ece4'
+                  ;(e.currentTarget as HTMLButtonElement).style.background = '#f0ece4'
                 }}
                 onMouseLeave={e => {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = '#d4cfc6'
-                    ; (e.currentTarget as HTMLButtonElement).style.background = '#ede9e2'
+                  ;(e.currentTarget as HTMLButtonElement).style.background = '#ede9e2'
                 }}
               >
                 <div style={{ flex: 1 }}>
                   <span style={{
                     fontFamily: "'Cormorant Garamond', Georgia, serif",
-                    fontSize: '20px',
+                    fontSize: 'clamp(18px, 2.1vw, 22px)',
                     fontWeight: 400,
                     color: '#1a1814',
                     display: 'block',
@@ -138,7 +138,7 @@ export default function Home() {
                   </span>
                   <span style={{
                     fontFamily: "'Raleway', sans-serif",
-                    fontSize: '11px',
+                    fontSize: 'clamp(13px, 1.4vw, 14px)',
                     fontWeight: 300,
                     letterSpacing: '0.05em',
                     color: '#8a8680',
@@ -149,7 +149,7 @@ export default function Home() {
                 </div>
                 <span style={{
                   fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: '12px',
+                  fontSize: 'clamp(14px, 1.5vw, 16px)',
                   fontStyle: 'italic',
                   color: '#8a8680',
                   marginRight: '1rem',
@@ -165,7 +165,7 @@ export default function Home() {
 
         <p style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: '13px',
+          fontSize: 'clamp(14px, 1.5vw, 16px)',
           fontStyle: 'italic',
           color: '#8a8680',
           lineHeight: 1.7
