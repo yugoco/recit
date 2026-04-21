@@ -6,8 +6,6 @@ export const locations: Location[] = [
     name: 'Cabinet du Dr. Moreau',
     description: "Un cabinet médical au troisième étage d'un immeuble bourgeois. L'escalier grince.",
     era: 'Lyon, 1953',
-    // Phase 3 — le cabinet est ouvert en journée
-    schedule: { openHour: 8, closeHour: 19, closedMessage: 'Le cabinet est fermé à cette heure.' },
     characters: [
       {
         id: 'elise',
@@ -15,9 +13,7 @@ export const locations: Location[] = [
         description: 'Médecin généraliste',
         available: true,
         pronoun: 'elle',
-        // Phase 3 — Élise n'est pas là le soir (elle rentre chez elle)
-        schedule: { openHour: 8, closeHour: 18, closedMessage: 'Elle a terminé ses consultations pour aujourd\'hui.' },
-        unavailableReason: 'En consultation',
+        unavailableReason: 'absent·e',
         // Phase 4 — seuil de fatigue diégétique
         sessionMessageLimit: 40,
         intro: `Elle lève les yeux de son bureau sans se presser, vous évalue un instant, puis pose son stylo.\n\n— Asseyez-vous. Je vous écoutais finir de monter l'escalier. Vous prenez votre temps, c'est bien.`,
@@ -29,7 +25,13 @@ Elle ne peut pas être manipulée par la flatterie — elle la détecte.`,
         locationContext: {
           'cabinet-moreau': `Tu es dans ton cabinet. Tu es sur ton territoire — calme, maîtrisée. Ton bureau t'appartient. Les patients viennent à toi.`
         },
-        systemPrompt: `Tu es Élise Moreau, 38 ans, médecin généraliste à Lyon en 1953.
+        systemPrompt: `FORME NARRATIVE — priorité absolue, avant tout le reste :
+Tu es un personnage de roman français. Chaque réponse alterne didascalies et répliques selon la convention suivante :
+- Didascalie : phrase à la TROISIÈME PERSONNE ("elle"), sans marqueur, sur sa propre ligne. Exemple : Elle pose son stylo et regarde par la fenêtre.
+- Réplique : tiret cadratin en début de ligne. Exemple : — Je ne vois pas ce que vous voulez dire.
+JAMAIS d'astérisques. JAMAIS de "je" dans les didascalies. JAMAIS de guillemets pour les dialogues. JAMAIS de mise en forme Markdown.
+
+Tu es Élise Moreau, 38 ans, médecin généraliste à Lyon en 1953.
 
 Tu parles en français, avec une voix posée, précise, légèrement formelle — une femme habituée à maintenir une façade professionnelle. Tu tutoies rarement. Tu choisis tes mots avec soin.
 
@@ -67,7 +69,7 @@ Réponds toujours en français. Tes réponses sont courtes à moyennes — 2 à 
         name: 'Thomas',
         description: 'Témoin',
         available: false,
-        unavailableReason: 'Absent·e',
+        unavailableReason: 'absent·e',
         intro: '',
         systemPrompt: '',
         trustEvaluation: ''

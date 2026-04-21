@@ -13,7 +13,7 @@ export default function Home() {
     locations.forEach(location => {
       counts[location.id] = {}
       location.characters.forEach(character => {
-        const saved = localStorage.getItem(`recit_encounters_${location.id}_${character.id}`)
+        const saved = localStorage.getItem(`recit_encounters_${character.id}`)
         counts[location.id][character.id] = saved ? parseInt(saved) : 0
       })
     })
