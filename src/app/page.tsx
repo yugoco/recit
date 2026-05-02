@@ -36,42 +36,17 @@ export default function Home() {
 
       <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center' }}>
 
-        <p style={{
-          fontFamily: "'Raleway', sans-serif",
-          fontSize: 'clamp(13px, 1.4vw, 14px)',
-          fontWeight: 400,
-          letterSpacing: '0.25em',
-          textTransform: 'uppercase',
-          color: '#8b6f47',
-          marginBottom: '1.5rem'
-        }}>
-          Un nouveau médium narratif
-        </p>
-
         <h1 style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(44px, 7vw, 64px)',
+          fontSize: 'clamp(56px, 9vw, 80px)',
           fontWeight: 300,
           letterSpacing: '-0.02em',
           lineHeight: 1,
           color: '#1a1814',
-          marginBottom: '1rem'
+          marginBottom: '3rem'
         }}>
           Récit
         </h1>
-
-        <p style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(16px, 1.9vw, 19px)',
-          fontWeight: 300,
-          fontStyle: 'italic',
-          color: '#4a4640',
-          lineHeight: 1.6,
-          marginBottom: '3rem'
-        }}>
-          Chaque lieu cache une histoire.<br />
-          C'est à vous de la trouver.
-        </p>
 
         <div style={{
           width: '40px',
@@ -79,18 +54,6 @@ export default function Home() {
           background: '#d4cfc6',
           margin: '0 auto 2rem'
         }} />
-
-        <p style={{
-          fontFamily: "'Raleway', sans-serif",
-          fontSize: 'clamp(13px, 1.4vw, 14px)',
-          fontWeight: 500,
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          color: '#8a8680',
-          marginBottom: '1rem'
-        }}>
-          Lieux
-        </p>
 
         <div style={{
           display: 'flex',
@@ -138,41 +101,20 @@ export default function Home() {
                   </span>
                   <span style={{
                     fontFamily: "'Raleway', sans-serif",
-                    fontSize: 'clamp(13px, 1.4vw, 14px)',
+                    fontSize: 'clamp(12px, 1.3vw, 13px)',
                     fontWeight: 300,
-                    letterSpacing: '0.05em',
+                    letterSpacing: '0.08em',
                     color: '#8a8680',
                     textTransform: 'uppercase'
                   }}>
                     {location.era}
                   </span>
                 </div>
-                <span style={{
-                  fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 'clamp(14px, 1.5vw, 16px)',
-                  fontStyle: 'italic',
-                  color: '#8a8680',
-                  marginRight: '1rem',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {`${characterCount} personnage${characterCount > 1 ? 's' : ''}`}
-                </span>
-                <span style={{ fontSize: '16px', color: '#c4a882' }}>→</span>
+                <span style={{ fontSize: '16px', color: '#c4a882', marginLeft: '1rem' }}>→</span>
               </button>
             )
           })}
         </div>
-
-        <p style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(14px, 1.5vw, 16px)',
-          fontStyle: 'italic',
-          color: '#8a8680',
-          lineHeight: 1.7
-        }}>
-          Certaines vérités ne se révèlent qu'avec le temps.<br />
-          Revenez. Elle se souviendra.
-        </p>
 
       </div>
     </main>

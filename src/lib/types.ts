@@ -20,12 +20,12 @@ export interface Character {
   trustEvaluation: string
   pronoun?: 'elle' | 'il'
   // Phase 2 — présence multi-lieu
-  locationContext?: Record<string, string> // locationId → instruction contextuelle
+  locationContext?: Record<string, string>
   // Phase 3 — indisponibilité sémantique
   schedule?: Schedule
-  unavailableReason?: string // "Endormi·e" | "En consultation" | …
+  unavailableReason?: string
   // Phase 4 — fatigue diégétique
-  sessionMessageLimit?: number // seuil avant sortie gracieuse (défaut : 40)
+  sessionMessageLimit?: number
 }
 
 export interface Location {
@@ -43,15 +43,15 @@ export interface ReaderProgress {
   completedParts: string[]
   // Phase 4 — finitude narrative
   isStoryComplete: boolean
-  completedAt?: number // timestamp réel
+  completedAt?: number
 }
 
 // Phase 4 — mémoire distillée par Haiku
 export interface CoreMemory {
   characterId: string
-  content: string       // 2–3 phrases subjectives, 1re personne
-  createdAt: number     // timestamp réel
-  sessionCount: number  // numéro de la session distillée
+  content: string
+  createdAt: number
+  sessionCount: number
 }
 
 export interface ChatRequest {
@@ -70,10 +70,13 @@ export interface ChatRequest {
   sessionMessageCount?: number
 }
 
-// Réponse unifiée de /api/chat (Phase 1 — Tool Use)
+// Réponse unifiée de /api/chat
 export interface ChatResponse {
   reply: string
   trustDelta: number
   newClueIds: string[]
-  sessionEnded?: boolean // Phase 4 — fatigue diégétique
+  sessionEnded?: boolean
+  // Type de dérive détectée côté serveur — utilisable pour UX ou debug
+  // 'physical_action' | 'violence' | 'stagnation' | null
+  driftDetected?: string | null
 }

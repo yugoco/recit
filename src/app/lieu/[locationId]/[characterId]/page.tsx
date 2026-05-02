@@ -18,8 +18,6 @@ import {
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
 
-// ─── Helpers localStorage ─────────────────────────────────────────────────────
-
 function loadProgress(): ReaderProgress {
   try {
     const saved = localStorage.getItem(storageKeys.progress())
@@ -35,14 +33,12 @@ function saveProgress(progress: ReaderProgress) {
   localStorage.setItem(storageKeys.progress(), JSON.stringify(progress))
 }
 
-// ─── Distillation Core Memory (Phase 4 — fire-and-forget) ────────────────────
-
 async function distillCoreMemory(
   characterId: string,
   messages: Message[],
   sessionCount: number
 ): Promise<void> {
-  if (messages.length < 4) return // pas assez de matière à distiller
+  if (messages.length < 4) return
   try {
     const res = await fetch('/api/memory', {
       method: 'POST',
@@ -57,15 +53,12 @@ async function distillCoreMemory(
         createdAt: data.createdAt ?? Date.now(),
         sessionCount: data.sessionCount ?? sessionCount
       }))
-      // La Core Memory remplace l'historique brut
       localStorage.setItem(storageKeys.context(characterId), data.coreMemory)
     }
   } catch {
-    // Silencieux — c'est du fire-and-forget
+    // fire-and-forget
   }
 }
-
-// ─── Sauvegarde de fin de session ─────────────────────────────────────────────
 
 function saveSession(
   locationId: string,
@@ -79,37 +72,23 @@ function saveSession(
   const previous = parseInt(localStorage.getItem(key) ?? '0')
   localStorage.setItem(key, (previous + 1).toString())
 
-  // Sauvegarder contexte brut des 8 derniers messages (sera écrasé par Core Memory async)
   const summary = messages
     .slice(-8)
     .map(m => `${m.role === 'user' ? 'Lecteur' : characterName}: ${m.content}`)
     .join('\n')
   localStorage.setItem(storageKeys.context(characterId), summary)
 
-  // Enregistrer timestamp pour contexte d'absence (Phase 3)
   markLastSeen(characterId)
-
-  // Sauvegarder trust
-  // (déjà fait en temps réel dans evaluateTrust — pas besoin de répéter)
 }
-
-// ─── Labels UI ────────────────────────────────────────────────────────────────
 
 function relationLabel(completedEncounters: number, trust: number, pronoun: 'elle' | 'il'): string {
   const p = pronoun === 'elle' ? 'Elle' : 'Il'
-  if (completedEncounters === 0) return 'Première visite'
+  if (completedEncounters === 0) return 'Première rencontre'
   if (completedEncounters === 1 && trust < 40) return `${p} se souvient de vous`
   if (completedEncounters <= 3 && trust < 65)  return `${p} commence à vous reconnaître`
   if (trust >= 65) return `${p} vous fait confiance`
   return `${p} se souvient de vous`
 }
-
-function visitLabel(completedEncounters: number): string {
-  if (completedEncounters === 0) return 'première visite'
-  return `visite ${completedEncounters + 1}`
-}
-
-// ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ConversationPage() {
   const params      = useParams()
@@ -127,7 +106,6 @@ export default function ConversationPage() {
   const [newClueFound,        setNewClueFound]        = useState<string | null>(null)
   const [sessionEnded,        setSessionEnded]        = useState(false)
   const [sessionMsgCount,     setSessionMsgCount]     = useState(0)
-  // Phase 3 — heure diégétique (affiché en header)
   const [diegeticTime,        setDiegeticTime]        = useState('')
 
   const messagesEndRef    = useRef<HTMLDivElement>(null)
@@ -141,12 +119,10 @@ export default function ConversationPage() {
   const sessionMsgRef     = useRef(0)
   const characterRef      = useRef(character)
 
-  useEffect(() => { messagesRef.current  = messages  }, [messages])
-  useEffect(() => { trustRef.current     = trust     }, [trust])
-  useEffect(() => { progressRef.current  = progress  }, [progress])
+  useEffect(() => { messagesRef.current   = messages       }, [messages])
+  useEffect(() => { trustRef.current      = trust          }, [trust])
+  useEffect(() => { progressRef.current   = progress       }, [progress])
   useEffect(() => { sessionMsgRef.current = sessionMsgCount }, [sessionMsgCount])
-
-  // ─── Phase 3 — horloge diégétique ─────────────────────────────────────────
 
   useEffect(() => {
     initDiegeticTime()
@@ -156,23 +132,18 @@ export default function ConversationPage() {
     return () => clearInterval(id)
   }, [])
 
-  // ─── Initialisation ────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (!character || hasInitialized.current) return
-    hasInitialized.current  = true
-    characterRef.current    = character
+    hasInitialized.current = true
+    characterRef.current   = character
 
-    // Phase 2 — migration des anciennes clés localStorage
     migrateStorageKeys(locationId, characterId)
 
-    // Phase 3 — vérifier disponibilité temporelle
     if (character.schedule) {
       const { openHour, closeHour } = character.schedule
       if (!isWithinSchedule(openHour, closeHour)) {
         const closedMsg = character.schedule.closedMessage ?? `${character.name} n'est pas disponible à cette heure.`
-        const closedMessage: Message = { role: 'assistant', content: closedMsg, timestamp: Date.now() }
-        setMessages([closedMessage])
+        setMessages([{ role: 'assistant', content: closedMsg, timestamp: Date.now() }])
         setSessionEnded(true)
         return
       }
@@ -180,7 +151,7 @@ export default function ConversationPage() {
 
     const savedTrust      = localStorage.getItem(storageKeys.trust(characterId))
     const savedEncounters = localStorage.getItem(storageKeys.encounters(characterId))
-    const currentTrust    = savedTrust     ? parseInt(savedTrust)     : 10
+    const currentTrust    = savedTrust      ? parseInt(savedTrust)      : 10
     const completed       = savedEncounters ? parseInt(savedEncounters) : 0
 
     setTrust(currentTrust)
@@ -191,26 +162,22 @@ export default function ConversationPage() {
     setProgress(initialProgress)
     progressRef.current = initialProgress
 
-    // Récupérer Core Memory ou contexte brut
     const coreMemoryRaw = localStorage.getItem(storageKeys.coreMemory(characterId))
     const savedContext  = localStorage.getItem(storageKeys.context(characterId)) ?? ''
     let lastContext = savedContext
 
-    // Si on a une Core Memory, l'utiliser à la place du contexte brut
     if (coreMemoryRaw) {
       try {
         const cm = JSON.parse(coreMemoryRaw)
         if (cm.content) lastContext = cm.content
-      } catch { /* garder savedContext */ }
+      } catch { /* keep savedContext */ }
     }
 
     lastContextRef.current = lastContext
 
-    // Phase 3 — contexte d'absence
     const absenceCtx = getAbsenceContext(characterId)
 
     if (lastContext) {
-      // Visite de retour — message d'ouverture dynamique
       setIsLoading(true)
       const body: ChatRequest = {
         locationId,
@@ -221,8 +188,7 @@ export default function ConversationPage() {
         openingMessage: true,
         discoveredClues: initialProgress.discoveredClues,
         mentionedCharacters: [],
-        absenceContext: absenceCtx ?? undefined,
-        currentLocationName: character.locationContext?.[locationId] ? undefined : undefined
+        absenceContext: absenceCtx ?? undefined
       }
       fetch('/api/chat', {
         method: 'POST',
@@ -237,7 +203,6 @@ export default function ConversationPage() {
             messagesRef.current = [opening]
             lastContextRef.current = ''
           }
-          // Appliquer trust delta de l'ouverture si présent
           if (data.trustDelta) {
             const newTrust = Math.max(0, Math.min(100, currentTrust + data.trustDelta))
             setTrust(newTrust)
@@ -248,21 +213,17 @@ export default function ConversationPage() {
         })
         .catch(() => setIsLoading(false))
     } else {
-      // Première visite — intro statique
       const intro: Message = { role: 'assistant', content: character.intro, timestamp: Date.now() }
       setMessages([intro])
       messagesRef.current = [intro]
     }
   }, [locationId, characterId, character])
 
-  // ─── Sauvegarde au déchargement ───────────────────────────────────────────
-
   useEffect(() => {
     const handleUnload = () => {
       if (hasSavedSession.current) return
       hasSavedSession.current = true
       saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
-      // Fire-and-forget : pas d'await possible dans beforeunload
       distillCoreMemory(
         characterId,
         messagesRef.current,
@@ -273,13 +234,9 @@ export default function ConversationPage() {
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [locationId, characterId])
 
-  // ─── Scroll automatique ───────────────────────────────────────────────────
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  // ─── Notification d'indice ────────────────────────────────────────────────
 
   useEffect(() => {
     if (newClueFound) {
@@ -288,25 +245,18 @@ export default function ConversationPage() {
     }
   }, [newClueFound])
 
-  // ─── Quitter ──────────────────────────────────────────────────────────────
-
   async function saveAndLeave() {
     if (!hasSavedSession.current) {
       hasSavedSession.current = true
       saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
     }
-
-    // Phase 4 — distillation async (non bloquante pour l'UX)
     distillCoreMemory(
       characterId,
       messagesRef.current,
       parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
     )
-
     router.push(`/lieu/${locationId}`)
   }
-
-  // ─── Envoi d'un message ───────────────────────────────────────────────────
 
   async function sendMessage() {
     if (!input.trim() || isLoading || sessionEnded) return
@@ -325,7 +275,6 @@ export default function ConversationPage() {
     const lastContext = lastContextRef.current
     lastContextRef.current = ''
 
-    // Phase 3 — contexte d'absence (seulement au premier message de retour)
     const absenceCtx = messages.length <= 1 ? getAbsenceContext(characterId) : null
 
     try {
@@ -359,7 +308,6 @@ export default function ConversationPage() {
         const finalMessages = [...updatedMessages, assistantMessage]
         setMessages(finalMessages)
 
-        // Phase 1 — trust delta depuis l'API unifiée
         if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
           const newTrust = Math.max(0, Math.min(100, trustRef.current + data.trustDelta))
           setTrust(newTrust)
@@ -367,12 +315,10 @@ export default function ConversationPage() {
           localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
         }
 
-        // Phase 1 — indices depuis l'API unifiée
         if (data.newClueIds?.length > 0) {
           applyNewClues(data.newClueIds)
         }
 
-        // Phase 4 — fatigue diégétique
         if (data.sessionEnded) {
           setSessionEnded(true)
         }
@@ -383,8 +329,6 @@ export default function ConversationPage() {
 
     setIsLoading(false)
   }
-
-  // ─── Appliquer les indices découverts ─────────────────────────────────────
 
   function applyNewClues(clueIds: string[]) {
     const current = progressRef.current
@@ -406,17 +350,13 @@ export default function ConversationPage() {
     progressRef.current = newProgress
     saveProgress(newProgress)
 
-    // Notif indice
     const firstClue = story.clues.find(c => c.id === newClues[0])
-    setNewClueFound(firstClue?.content ?? 'Un nouvel indice a été révélé.')
+    setNewClueFound(firstClue?.content ?? 'Un indice a été révélé.')
 
-    // Phase 4 — l'histoire est terminée
     if (storyJustCompleted) {
       setSessionEnded(true)
     }
   }
-
-  // ─── Handlers UI ──────────────────────────────────────────────────────────
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -429,8 +369,6 @@ export default function ConversationPage() {
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
   }
-
-  // ─── Rendu ────────────────────────────────────────────────────────────────
 
   if (!character) {
     return <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>Personnage introuvable.</div>
@@ -473,7 +411,7 @@ export default function ConversationPage() {
         </div>
       )}
 
-      {/* Notification fin d'histoire (Phase 4) */}
+      {/* Épilogue */}
       {isComplete && (
         <div style={{
           position: 'fixed',
@@ -500,7 +438,7 @@ export default function ConversationPage() {
               marginBottom: '2rem',
               whiteSpace: 'pre-line'
             }}>
-              {story.epilogueMessage}
+              {story.heart.epilogueMessage}
             </p>
             <button
               onClick={() => router.push(`/lieu/${locationId}`)}
@@ -540,7 +478,7 @@ export default function ConversationPage() {
           onClick={saveAndLeave}
           style={{
             fontFamily: "'Raleway', sans-serif",
-            fontSize: 'clamp(14px, 1.5vw, 15px)',
+            fontSize: 'clamp(13px, 1.4vw, 14px)',
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
@@ -561,7 +499,6 @@ export default function ConversationPage() {
         }}>
           {character.name}
         </span>
-        {/* Phase 3 — heure diégétique */}
         <span style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
           fontSize: 'clamp(12px, 1.3vw, 14px)',
@@ -570,7 +507,7 @@ export default function ConversationPage() {
           textAlign: 'right',
           maxWidth: '140px'
         }}>
-          {diegeticTime || visitLabel(completedEncounters)}
+          {diegeticTime}
         </span>
       </div>
 
@@ -583,7 +520,6 @@ export default function ConversationPage() {
         width: '100%',
         margin: '0 auto'
       }}>
-        {/* Divider relation */}
         <div style={{ textAlign: 'center', margin: '0 0 2rem', position: 'relative' }}>
           <div style={{
             position: 'absolute', top: '50%', left: 0, right: 0,
@@ -645,7 +581,6 @@ export default function ConversationPage() {
           <TrustBar value={trust} characterName={character.name} />
 
           {sessionEnded && !isComplete ? (
-            /* Phase 4 — Fatigue diégétique : session terminée par le personnage */
             <p style={{
               fontFamily: "'Cormorant Garamond', Georgia, serif",
               fontSize: 'clamp(15px, 1.7vw, 17px)',
@@ -654,7 +589,7 @@ export default function ConversationPage() {
               textAlign: 'center',
               padding: '0.75rem 0'
             }}>
-              La conversation s'est refermée. Revenez une autre fois.
+              La conversation s'est refermée.
             </p>
           ) : (
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
@@ -710,19 +645,6 @@ export default function ConversationPage() {
                 Envoyer
               </button>
             </div>
-          )}
-
-          {!sessionEnded && (
-            <p style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              fontSize: 'clamp(14px, 1.5vw, 16px)',
-              fontStyle: 'italic',
-              color: '#8a8680',
-              marginTop: '0.6rem',
-              textAlign: 'center'
-            }}>
-              Prenez le temps. {character.pronoun === 'il' ? 'Il' : 'Elle'} remarque comment vous l'écoutez.
-            </p>
           )}
         </div>
       </div>

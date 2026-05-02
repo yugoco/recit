@@ -22,16 +22,13 @@ export default function LocationPage() {
   useEffect(() => {
     if (!location) return
 
-    // Phase 3 — initialiser le temps diégétique si pas encore fait
     initDiegeticTime()
 
-    // Phase 3 — vérifier si le lieu est ouvert
     if (location.schedule) {
       const { openHour, closeHour } = location.schedule
       setLocationOpen(isWithinSchedule(openHour, closeHour))
     }
 
-    // Phase 2 — nouvelles clés sans locationId
     const counts: Record<string, number> = {}
     location.characters.forEach(character => {
       const saved = localStorage.getItem(storageKeys.encounters(character.id))
@@ -64,7 +61,7 @@ export default function LocationPage() {
           onClick={() => router.push('/')}
           style={{
             fontFamily: "'Raleway', sans-serif",
-            fontSize: 'clamp(14px, 1.5vw, 15px)',
+            fontSize: 'clamp(13px, 1.4vw, 14px)',
             fontWeight: 400,
             letterSpacing: '0.15em',
             textTransform: 'uppercase',
@@ -87,12 +84,23 @@ export default function LocationPage() {
           letterSpacing: '-0.02em',
           lineHeight: 1,
           color: '#1a1814',
-          marginBottom: '1rem'
+          marginBottom: '0.75rem'
         }}>
           {location.name}
         </h2>
 
-        {/* Phase 3 — badge si fermé */}
+        <p style={{
+          fontFamily: "'Raleway', sans-serif",
+          fontSize: 'clamp(12px, 1.3vw, 13px)',
+          fontWeight: 300,
+          letterSpacing: '0.08em',
+          color: '#8a8680',
+          textTransform: 'uppercase',
+          marginBottom: '1rem'
+        }}>
+          {location.era}
+        </p>
+
         {!locationOpen && location.schedule?.closedMessage && (
           <p style={{
             fontFamily: "'Raleway', sans-serif",
@@ -121,23 +129,10 @@ export default function LocationPage() {
 
         <div style={{ width: '40px', height: '1px', background: '#d4cfc6', margin: '0 auto 2rem' }} />
 
-        <p style={{
-          fontFamily: "'Raleway', sans-serif",
-          fontSize: 'clamp(13px, 1.4vw, 14px)',
-          fontWeight: 500,
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          color: '#8a8680',
-          marginBottom: '1rem'
-        }}>
-          Personnages
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {location.characters.map(character => {
             const visits = encounterCounts[character.id] ?? 0
 
-            // Phase 3 — vérifier disponibilité temporelle du personnage
             const charScheduleOpen = character.schedule
               ? isWithinSchedule(character.schedule.openHour, character.schedule.closeHour)
               : true
@@ -145,7 +140,6 @@ export default function LocationPage() {
             const isUnavailable = !character.available || !charScheduleOpen
 
             if (isUnavailable) {
-              // Phase 3 — raison sémantique selon schedule vs available
               const badgeText = !character.available
                 ? (character.unavailableReason ?? 'absent·e')
                 : (character.schedule?.closedMessage ?? 'absent·e')
@@ -178,7 +172,7 @@ export default function LocationPage() {
                     </span>
                     <span style={{
                       fontFamily: "'Raleway', sans-serif",
-                      fontSize: 'clamp(13px, 1.4vw, 14px)',
+                      fontSize: 'clamp(12px, 1.3vw, 13px)',
                       fontWeight: 300,
                       letterSpacing: '0.05em',
                       color: '#8a8680',
@@ -188,7 +182,7 @@ export default function LocationPage() {
                     </span>
                   </div>
                   <span style={{
-                    fontSize: 'clamp(13px, 1.4vw, 14px)',
+                    fontSize: 'clamp(12px, 1.3vw, 13px)',
                     fontFamily: "'Raleway', sans-serif",
                     letterSpacing: '0.1em',
                     textTransform: 'uppercase' as const,
@@ -242,7 +236,7 @@ export default function LocationPage() {
                   </span>
                   <span style={{
                     fontFamily: "'Raleway', sans-serif",
-                    fontSize: 'clamp(13px, 1.4vw, 14px)',
+                    fontSize: 'clamp(12px, 1.3vw, 13px)',
                     fontWeight: 300,
                     letterSpacing: '0.05em',
                     color: '#8a8680',
@@ -266,16 +260,6 @@ export default function LocationPage() {
             )
           })}
         </div>
-
-        <p style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(14px, 1.5vw, 16px)',
-          fontStyle: 'italic',
-          color: '#8a8680',
-          lineHeight: 1.7
-        }}>
-          {location.era}
-        </p>
 
       </div>
     </main>

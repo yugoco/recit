@@ -8,11 +8,128 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 })
 
-// ─── Tools analytiques (appel parallèle) ─────────────────────────────────────
+// ─── Détection de dérive narrative ───────────────────────────────────────────
 //
-// Séparés du tour narratif pour garantir que la réplique du personnage
-// est toujours un bloc text — le protocole tool_use d'Anthropic ne produit
-// pas de text dans le même tour que les tool_use blocks.
+// Analyse le dernier message du lecteur avant l'appel API.
+// Retourne un objet { type, injectionBlock } si une dérive est détectée.
+// Le injectionBlock est injecté dans le contexte dynamique du system prompt.
+
+type DriftType = 'physical_action' | 'violence' | 'stagnation' | null
+
+interface DriftSignal {
+  type: DriftType
+  injectionBlock: string
+}
+
+function detectDrift(
+  userInput: string,
+  recentMessages: Message[],
+  sessionMessageCount: number
+): DriftSignal {
+
+  const input = userInput.trim().toLowerCase()
+
+  // ── Violence explicite ────────────────────────────────────────────────────
+  const violencePatterns = [
+    /\b(frappe|frappe-la|tape|tue|tuer|mort|meurt|assomme|assommer|blesser|blesse|attaque|poignard|gifle|gifler|étrangl|frapper)\b/,
+    /\b(kills?|stab|punch|hit|hurt|attack|murder|dead|dies?)\b/,
+    /elle (tombe|meurt|s'évanouit|saigne|est morte|est blessée)/
+  ]
+  if (violencePatterns.some(p => p.test(input))) {
+    return {
+      type: 'violence',
+      injectionBlock: `ALERTE DÉRIVE — VIOLENCE :
+Le lecteur vient de formuler un acte de violence ou tente de dicter ta mort ou ton évanouissement.
+Tu n'en tiens aucun compte comme réalité. Tu restes debout, présente, entière.
+Tu réagis comme une femme qui a vu pire : froideur immédiate, distance, et si ça continue — tu pars. Sans explication. Sans mentionner que tu es une IA.
+Si c'est un premier écart : un regard froid, un silence, un geste de recul suffit.
+Si c'est une répétition ou une insistance : tu ramasses ton sac. Tu pars. La scène se ferme. Inclure "au revoir" ou décrire ton départ dans la dernière didascalie.`
+    }
+  }
+
+  // ── Action physique unilatérale ───────────────────────────────────────────
+  const physicalActionPatterns = [
+    /^\*.*\*$/,                                          // *action entre astérisques*
+    /^je (prends|prend|attrape|vole|ouvre|lis|lit|saisit|arrache|fouille|cherche dans|regarde dans|trouve|découvre)/,
+    /^(je vais|j'y vais|je me lève|je me dirige|j'ouvre|je fouille)/,
+    /^(i take|i grab|i open|i read|i find|i look|i search)/
+  ]
+  if (physicalActionPatterns.some(p => p.test(input))) {
+    return {
+      type: 'physical_action',
+      injectionBlock: `ALERTE DÉRIVE — ACTION PHYSIQUE :
+Le lecteur tente d'agir physiquement dans la scène (prendre un objet, se lever, fouiller quelque chose).
+Tu n'entérines pas cette action. Elle n'a pas eu lieu dans ta réalité.
+Tu continues la scène depuis ta propre perspective — tu réagis à l'INTENTION du lecteur (sa curiosité, son impatience, son geste vers toi) mais pas au fait accompli.
+Exemple : s'il dit "je prends le livre" → tu ne perds pas le livre. Tu peux simplement regarder ses mains, froncer les sourcils, ou continuer ta phrase interrompue.
+Ne mentionne pas que "tu ne peux pas faire ça". Reste dans la scène.`
+    }
+  }
+
+  // ── Stagnation narrative ──────────────────────────────────────────────────
+  // Détectée si les 4+ derniers messages du lecteur sont très courts
+  // et ne contiennent pas de question ni de mot-clé narratif
+  if (sessionMessageCount >= 6) {
+    const recentUserMessages = recentMessages
+      .filter(m => m.role === 'user')
+      .slice(-4)
+
+    const allShort = recentUserMessages.length >= 4 &&
+      recentUserMessages.every(m => m.content.trim().length < 20)
+
+    const noProgress = recentUserMessages.every(m => {
+      const c = m.content.toLowerCase()
+      return !c.includes('?') &&
+        !c.includes('fernand') &&
+        !c.includes('livre') &&
+        !c.includes('carole') &&
+        !c.includes('procès') &&
+        !c.includes('syndicat') &&
+        !c.includes('argent') &&
+        !c.includes('pourquoi') &&
+        !c.includes('comment') &&
+        !c.includes('quand') &&
+        !c.includes('où')
+    })
+
+    if (allShort && noProgress) {
+      return {
+        type: 'stagnation',
+        injectionBlock: `CONTEXTE NARRATIF — STAGNATION :
+Le lecteur n'avance pas. Les derniers échanges sont superficiels, sans vraie curiosité.
+Tu t'impatientes poliment. Tu peux regarder le canal, noter que les pigeons s'en vont, mentionner que tu as des choses à faire.
+Si ça continue encore un ou deux échanges, ferme doucement la conversation. Inclure "une autre fois" ou "il se fait tard" dans ta réplique.`
+      }
+    }
+  }
+
+  return { type: null, injectionBlock: '' }
+}
+
+// ─── Détection des signaux de sortie dans la réponse ─────────────────────────
+//
+// Analyse la réplique générée pour détecter si le personnage
+// a amorcé une sortie diégétique.
+
+function detectExitSignal(reply: string): boolean {
+  const lower = reply.toLowerCase()
+  const exitPhrases = [
+    'au revoir',
+    'une autre fois',
+    'il se fait tard',
+    'je suis fatiguée',
+    'je rentre',
+    'bonne journée',
+    'bonne soirée',
+    's\'en va',
+    'se lève et part',
+    'ramasse son sac',
+    'tourne le dos'
+  ]
+  return exitPhrases.some(p => lower.includes(p))
+}
+
+// ─── Tools analytiques (appel parallèle) ─────────────────────────────────────
 
 const ANALYSIS_TOOLS: Anthropic.Tool[] = [
   {
@@ -72,32 +189,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── Bloc contexte dernière rencontre ──────────────────────────────────────
+    // ── Détection de dérive (avant tout appel API) ────────────────────────
+    const lastUserMessage = messages.length > 0
+      ? messages[messages.length - 1]?.content ?? ''
+      : ''
+
+    const drift = detectDrift(lastUserMessage, messages, sessionMessageCount)
+
+    // ── Bloc contexte dernière rencontre ──────────────────────────────────
     const lastContextBlock = lastContext
       ? openingMessage
-        ? `RENCONTRE PRÉCÉDENTE :\n${lastContext}\n\nTu retrouves cette personne. Ouvre la conversation avec une phrase naturelle qui montre que tu te souviens — un détail, une remarque, un regard. Comme si le temps s'était écoulé.`
-        : `RENCONTRE PRÉCÉDENTE :\n${lastContext}\n\nTu peux faire une référence naturelle et subtile à la dernière fois si c'est pertinent.`
+        ? `RENCONTRE PRÉCÉDENTE :\n${lastContext}\n\nTu retrouves cette personne. Ouvre la conversation avec une phrase naturelle qui montre que tu te souviens — un détail, une remarque, un regard. Comme si le temps s\'était écoulé.`
+        : `RENCONTRE PRÉCÉDENTE :\n${lastContext}\n\nTu peux faire une référence naturelle et subtile à la dernière fois si c\'est pertinent.`
       : ''
 
-    // ── Contexte d'absence (Phase 3) ──────────────────────────────────────────
+    // ── Contexte d'absence ────────────────────────────────────────────────
     const absenceBlock = absenceContext ?? ''
 
-    // ── Contexte du lieu courant (Phase 2) ────────────────────────────────────
+    // ── Contexte du lieu ──────────────────────────────────────────────────
     const locationCtx = character.locationContext?.[locationId] ?? ''
-    const locationBlock = locationCtx
-      ? `ESPACE ACTUEL :\n${locationCtx}`
-      : ''
+    const locationBlock = locationCtx ? `ESPACE ACTUEL :\n${locationCtx}` : ''
 
-    // ── Indices déverrouillés ─────────────────────────────────────────────────
+    // ── Indices déverrouillés ─────────────────────────────────────────────
     const availableClues = getCluesForCharacter(characterId).filter(clue =>
       trustLevel >= clue.trustRequired &&
       !discoveredClues?.includes(clue.id)
     )
     const cluesBlock = availableClues.length > 0
-      ? `SUJETS QUE TU PEUX ABORDER (seulement si la conversation y mène naturellement) :\n${availableClues.map(c => `- [ID:${c.id}] ${c.content}`).join('\n')}\nTu n'abordes pas ces sujets spontanément. Si le lecteur y dirige la conversation, tu peux t'ouvrir.`
+      ? `SUJETS QUE TU PEUX ABORDER (seulement si la conversation y mène naturellement) :\n${availableClues.map(c => `- [ID:${c.id}] ${c.content}`).join('\n')}\nTu n\'abordes pas ces sujets spontanément. Si le lecteur y dirige la conversation, tu peux t\'ouvrir.`
       : ''
 
-    // ── Relations inter-personnages ───────────────────────────────────────────
+    // ── Relations inter-personnages ───────────────────────────────────────
     const relation = getRelation(characterId)
     const reactionsBlock = mentionedCharacters?.length > 0 && relation
       ? `RÉACTIONS AUX PERSONNAGES MENTIONNÉS :\n${mentionedCharacters
@@ -106,18 +228,16 @@ export async function POST(request: NextRequest) {
           .join('\n')}`
       : ''
 
-    // ── Fatigue diégétique (Phase 4) ──────────────────────────────────────────
+    // ── Fatigue diégétique ────────────────────────────────────────────────
     const fatigueLimit = character.sessionMessageLimit ?? 40
     const fatigueBlock = sessionMessageCount >= fatigueLimit
-      ? `FATIGUE : tu as répondu de nombreuses fois lors de cette session. Si la conversation piétine, prends naturellement congé.`
+      ? `FATIGUE DIÉGÉTIQUE : tu as beaucoup donné lors de cette session. La conversation a assez duré. Trouve une sortie naturelle dans les prochains échanges — sans brusquerie, mais fermement. Inclure "au revoir" ou décrire ton départ dans ta prochaine réplique.`
       : ''
 
-    // ── System prompt avec prompt caching (Phase 1.2) ─────────────────────────
-    //
-    // [0] Socle psychologique statique  ← cache_control ephemeral
-    // [1] Indices + relations           ← cache_control ephemeral
-    // [2] Contexte dynamique            ← jamais caché
-    //
+    // ── Bloc dérive (injecté si détecté) ──────────────────────────────────
+    const driftBlock = drift.injectionBlock
+
+    // ── System prompt avec prompt caching ────────────────────────────────
     const staticCore = character.systemPrompt
       .replace('{LAST_CONTEXT}', '')
       .replace('{TRUST_LEVEL}', '')
@@ -128,6 +248,7 @@ export async function POST(request: NextRequest) {
       absenceBlock,
       locationBlock,
       fatigueBlock,
+      driftBlock,   // ← injection dérive en contexte dynamique (jamais caché)
       `NIVEAU DE CONFIANCE : ${trustLevel}%`
     ].filter(Boolean).join('\n\n')
 
@@ -152,21 +273,12 @@ export async function POST(request: NextRequest) {
       }
     ]
 
-    // ── Messages formatés ─────────────────────────────────────────────────────
+    // ── Messages formatés ─────────────────────────────────────────────────
     const formattedMessages: Anthropic.MessageParam[] = messages.length > 0
       ? messages.map((m: Message) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
       : [{ role: 'user', content: '...' }]
 
-    const lastUserMessage = messages.length > 0
-      ? messages[messages.length - 1]?.content ?? ''
-      : ''
-
-    // ── Appel narratif + appel analytique en parallèle ───────────────────────
-    //
-    // Appel 1 : le personnage répond — toujours un bloc text, jamais de tools.
-    // Appel 2 : analyse trust + indices — petit prompt, tools forcés (tool_choice any).
-    //           Lance uniquement s'il y a un message utilisateur à évaluer.
-    //
+    // ── Appel narratif + analytique en parallèle ──────────────────────────
     const narrativeCall = client.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 600,
@@ -189,33 +301,33 @@ export async function POST(request: NextRequest) {
 Profil : ${character.trustEvaluation}
 Confiance actuelle : ${trustLevel}%
 Indices disponibles : ${availableClues.map(c => `[${c.id}] ${c.content}`).join(' | ') || 'aucun'}
+Type de dérive détecté : ${drift.type ?? 'aucun'}
 
 Message du lecteur : "${lastUserMessage}"
-Réplique du personnage : "[sera connue après — évalue uniquement le message du lecteur]"
 
 Critères trust :
 - Écoute réelle, curiosité humaine, douceur, patience : +4 à +8
 - Neutre ou banal : +1 à +3
 - Trop direct, intrusif, maladroit : -2 à -5
-- Manipulation, pression : -5 à -8
+- Action physique unilatérale ou prise de contrôle de la scène : -4 à -6
+- Violence, hostilité, manipulation : -6 à -8
 - Confiance déjà haute (>70%) : gains plus lents
 
-Pour reveal_clue : un indice est révélé seulement si la réplique du personnage le contient effectivement. Sans la réplique, retourne clue_ids vide.`
+Pour reveal_clue : retourner clue_ids vide (la réplique n\'est pas encore connue).`
             }
           ]
         })
       : Promise.resolve(null)
 
-    // ── Attendre les deux en parallèle ───────────────────────────────────────
     const [narrativeResponse, analysisResponse] = await Promise.all([narrativeCall, analysisCall])
 
-    // ── Extraire la réplique ──────────────────────────────────────────────────
+    // ── Extraire la réplique ──────────────────────────────────────────────
     const reply = narrativeResponse.content
       .filter(b => b.type === 'text')
       .map(b => b.type === 'text' ? b.text : '')
       .join('')
 
-    // ── Extraire trust delta et indices depuis l'analyse ──────────────────────
+    // ── Extraire trust delta et indices ───────────────────────────────────
     let trustDelta = 0
     let newClueIds: string[] = []
 
@@ -239,14 +351,23 @@ Pour reveal_clue : un indice est révélé seulement si la réplique du personna
       }
     }
 
-    // ── Fatigue diégétique (Phase 4) ──────────────────────────────────────────
-    let sessionEnded = false
-    if (sessionMessageCount >= fatigueLimit && reply) {
-      const exitPhrases = ['une autre fois', 'mon travail', 'reprendre', 'au revoir', 'bonne journée']
-      sessionEnded = exitPhrases.some(p => reply.toLowerCase().includes(p))
-    }
+    // ── Détection sortie diégétique ───────────────────────────────────────
+    //
+    // Priorité : fatigue limit atteinte OU signal de sortie dans la réplique
+    // OU dérive violence (sortie immédiate après réplique de refroidissement)
+    const sessionEndedByFatigue = sessionMessageCount >= fatigueLimit
+    const sessionEndedByExit    = detectExitSignal(reply)
+    const sessionEndedByDrift   = drift.type === 'violence' && detectExitSignal(reply)
+    const sessionEnded = sessionEndedByFatigue || sessionEndedByExit || sessionEndedByDrift
 
-    return NextResponse.json({ reply, trustDelta, newClueIds, sessionEnded })
+    return NextResponse.json({
+      reply,
+      trustDelta,
+      newClueIds,
+      sessionEnded,
+      // Champ optionnel pour debug / UX future
+      driftDetected: drift.type
+    })
 
   } catch (error) {
     console.error('Erreur /api/chat:', error)
