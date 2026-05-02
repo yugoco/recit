@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getLocation } from '@/lib/locations'
-import { initDiegeticTime, isWithinSchedule, storageKeys } from '@/lib/time'
+import { initDiegeticTime, isWithinSchedule, storageKeys, getCooldownState, formatCooldownRemaining } from '@/lib/time'
 
 function encounterLabel(count: number): string {
   if (count === 0) return 'inconnu·e'
@@ -18,6 +18,8 @@ export default function LocationPage() {
 
   const [encounterCounts, setEncounterCounts] = useState<Record<string, number>>({})
   const [locationOpen,    setLocationOpen]    = useState(true)
+  // Cooldowns par characterId : remainingMs ou null
+  const [cooldowns, setCooldowns] = useState<Record<string, number | null>>({})
 
   useEffect(() => {
     if (!location) return
@@ -30,11 +32,18 @@ export default function LocationPage() {
     }
 
     const counts: Record<string, number> = {}
+    const cd: Record<string, number | null> = {}
+
     location.characters.forEach(character => {
       const saved = localStorage.getItem(storageKeys.encounters(character.id))
       counts[character.id] = saved ? parseInt(saved) : 0
+
+      const { onCooldown, remainingMs } = getCooldownState(character.id)
+      cd[character.id] = onCooldown ? remainingMs : null
     })
+
     setEncounterCounts(counts)
+    setCooldowns(cd)
   }, [location, locationId])
 
   if (!location) {
@@ -137,12 +146,25 @@ export default function LocationPage() {
               ? isWithinSchedule(character.schedule.openHour, character.schedule.closeHour)
               : true
 
-            const isUnavailable = !character.available || !charScheduleOpen
+            // Cooldown violence — priorité sur tout autre motif d'indisponibilité
+            const cooldownRemaining = cooldowns[character.id] ?? null
+            const isOnViolenceCooldown = cooldownRemaining !== null && cooldownRemaining > 0
+
+            const isUnavailable = isOnViolenceCooldown || !character.available || !charScheduleOpen
 
             if (isUnavailable) {
-              const badgeText = !character.available
-                ? (character.unavailableReason ?? 'absent·e')
-                : (character.schedule?.closedMessage ?? 'absent·e')
+              // Choisir le badge selon la raison d'indisponibilité
+              let badgeText: string
+              let badgeSubtext: string | null = null
+
+              if (isOnViolenceCooldown && cooldownRemaining !== null) {
+                badgeText    = 'ne souhaite pas vous parler'
+                badgeSubtext = formatCooldownRemaining(cooldownRemaining)
+              } else if (!character.available) {
+                badgeText = character.unavailableReason ?? 'absent·e'
+              } else {
+                badgeText = character.schedule?.closedMessage ?? 'absent·e'
+              }
 
               return (
                 <div
@@ -181,20 +203,35 @@ export default function LocationPage() {
                       {character.description}
                     </span>
                   </div>
-                  <span style={{
-                    fontSize: 'clamp(12px, 1.3vw, 13px)',
-                    fontFamily: "'Raleway', sans-serif",
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase' as const,
-                    color: '#8a8680',
-                    background: '#d4cfc6',
-                    padding: '2px 8px',
-                    borderRadius: '2px',
-                    marginLeft: '1rem',
-                    whiteSpace: 'nowrap' as const
-                  }}>
-                    {badgeText}
-                  </span>
+                  <div style={{ textAlign: 'right', marginLeft: '1rem', flexShrink: 0 }}>
+                    <span style={{
+                      fontSize: 'clamp(12px, 1.3vw, 13px)',
+                      fontFamily: "'Raleway', sans-serif",
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase' as const,
+                      color: '#8a8680',
+                      background: '#d4cfc6',
+                      padding: '2px 8px',
+                      borderRadius: '2px',
+                      display: 'block',
+                      whiteSpace: 'nowrap' as const
+                    }}>
+                      {badgeText}
+                    </span>
+                    {badgeSubtext && (
+                      <span style={{
+                        fontFamily: "'Cormorant Garamond', Georgia, serif",
+                        fontSize: 'clamp(11px, 1.2vw, 13px)',
+                        fontStyle: 'italic',
+                        color: '#8a8680',
+                        display: 'block',
+                        marginTop: '3px',
+                        whiteSpace: 'nowrap' as const
+                      }}>
+                        {badgeSubtext}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             }

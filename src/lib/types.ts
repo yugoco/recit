@@ -19,12 +19,9 @@ export interface Character {
   systemPrompt: string
   trustEvaluation: string
   pronoun?: 'elle' | 'il'
-  // Phase 2 — présence multi-lieu
   locationContext?: Record<string, string>
-  // Phase 3 — indisponibilité sémantique
   schedule?: Schedule
   unavailableReason?: string
-  // Phase 4 — fatigue diégétique
   sessionMessageLimit?: number
 }
 
@@ -34,19 +31,16 @@ export interface Location {
   description: string
   era: string
   characters: Character[]
-  // Phase 3
   schedule?: Schedule
 }
 
 export interface ReaderProgress {
   discoveredClues: string[]
   completedParts: string[]
-  // Phase 4 — finitude narrative
   isStoryComplete: boolean
   completedAt?: number
 }
 
-// Phase 4 — mémoire distillée par Haiku
 export interface CoreMemory {
   characterId: string
   content: string
@@ -54,6 +48,7 @@ export interface CoreMemory {
   sessionCount: number
 }
 
+// ChatRequest — utilisé en interne par anthropic-client.ts (pas de backend)
 export interface ChatRequest {
   locationId: string
   characterId: string
@@ -63,20 +58,18 @@ export interface ChatRequest {
   openingMessage?: boolean
   discoveredClues: string[]
   mentionedCharacters: string[]
-  // Phase 3
   absenceContext?: string
   currentLocationName?: string
-  // Phase 4
   sessionMessageCount?: number
 }
 
-// Réponse unifiée de /api/chat
 export interface ChatResponse {
   reply: string
   trustDelta: number
   newClueIds: string[]
   sessionEnded?: boolean
-  // Type de dérive détectée côté serveur — utilisable pour UX ou debug
-  // 'physical_action' | 'violence' | 'stagnation' | null
   driftDetected?: string | null
 }
+
+// Clé stockée dans localStorage — jamais envoyée à un serveur
+export const API_KEY_STORAGE_KEY = 'recit_api_key'

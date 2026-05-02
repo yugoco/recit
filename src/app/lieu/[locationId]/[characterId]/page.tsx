@@ -3,20 +3,25 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCharacter } from '@/lib/locations'
-import { getRelation, story, detectMentionedCharacters, computeNewlyUnlockedParts, checkStoryComplete } from '@/lib/story'
-import { Message, ReaderProgress, ChatRequest, ChatResponse } from '@/lib/types'
+import { story, detectMentionedCharacters, computeNewlyUnlockedParts, checkStoryComplete } from '@/lib/story'
+import { Message, ReaderProgress, ChatRequest, API_KEY_STORAGE_KEY } from '@/lib/types'
+import { sendChatMessage, distillCoreMemory } from '@/lib/anthropic-client'
 import {
   initDiegeticTime,
   getAbsenceContext,
+  getViolenceReturnContext,
   markLastSeen,
+  markSessionExit,
   migrateStorageKeys,
   storageKeys,
-  getDiegeticNow,
   isWithinSchedule,
-  formatDiegeticDate
+  formatDiegeticDate,
+  ExitReason,
 } from '@/lib/time'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
+
+// ─── Helpers localStorage ─────────────────────────────────────────────────────
 
 function loadProgress(): ReaderProgress {
   try {
@@ -33,62 +38,36 @@ function saveProgress(progress: ReaderProgress) {
   localStorage.setItem(storageKeys.progress(), JSON.stringify(progress))
 }
 
-async function distillCoreMemory(
-  characterId: string,
-  messages: Message[],
-  sessionCount: number
-): Promise<void> {
-  if (messages.length < 4) return
-  try {
-    const res = await fetch('/api/memory', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ characterId, messages, sessionCount })
-    })
-    const data = await res.json()
-    if (data.coreMemory) {
-      localStorage.setItem(storageKeys.coreMemory(characterId), JSON.stringify({
-        content: data.coreMemory,
-        characterId,
-        createdAt: data.createdAt ?? Date.now(),
-        sessionCount: data.sessionCount ?? sessionCount
-      }))
-      localStorage.setItem(storageKeys.context(characterId), data.coreMemory)
-    }
-  } catch {
-    // fire-and-forget
-  }
-}
-
-function saveSession(
-  locationId: string,
-  characterId: string,
-  messages: Message[],
-  characterName: string
-) {
+function saveSession(characterId: string, messages: Message[], characterName: string) {
   if (messages.length === 0) return
-
   const key = storageKeys.encounters(characterId)
-  const previous = parseInt(localStorage.getItem(key) ?? '0')
-  localStorage.setItem(key, (previous + 1).toString())
-
+  const prev = parseInt(localStorage.getItem(key) ?? '0')
+  localStorage.setItem(key, (prev + 1).toString())
   const summary = messages
     .slice(-8)
     .map(m => `${m.role === 'user' ? 'Lecteur' : characterName}: ${m.content}`)
     .join('\n')
   localStorage.setItem(storageKeys.context(characterId), summary)
-
   markLastSeen(characterId)
 }
 
-function relationLabel(completedEncounters: number, trust: number, pronoun: 'elle' | 'il'): string {
+// ─── Labels ───────────────────────────────────────────────────────────────────
+
+function relationLabel(encounters: number, trust: number, pronoun: 'elle' | 'il'): string {
   const p = pronoun === 'elle' ? 'Elle' : 'Il'
-  if (completedEncounters === 0) return 'Première rencontre'
-  if (completedEncounters === 1 && trust < 40) return `${p} se souvient de vous`
-  if (completedEncounters <= 3 && trust < 65)  return `${p} commence à vous reconnaître`
-  if (trust >= 65) return `${p} vous fait confiance`
+  if (encounters === 0) return 'Première rencontre'
+  if (encounters === 1 && trust < 40) return `${p} se souvient de vous`
+  if (encounters <= 3  && trust < 65) return `${p} commence à vous reconnaître`
+  if (trust >= 65)                    return `${p} vous fait confiance`
   return `${p} se souvient de vous`
 }
+
+function isMobile(): boolean {
+  if (typeof window === 'undefined') return false
+  return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
+}
+
+// ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function ConversationPage() {
   const params      = useParams()
@@ -107,23 +86,28 @@ export default function ConversationPage() {
   const [sessionEnded,        setSessionEnded]        = useState(false)
   const [sessionMsgCount,     setSessionMsgCount]     = useState(0)
   const [diegeticTime,        setDiegeticTime]        = useState('')
+  const [apiKey,              setApiKey]              = useState('')
+  const [noApiKey,            setNoApiKey]            = useState(false)
 
-  const messagesEndRef    = useRef<HTMLDivElement>(null)
-  const textareaRef       = useRef<HTMLTextAreaElement>(null)
-  const hasInitialized    = useRef(false)
-  const hasSavedSession   = useRef(false)
-  const lastContextRef    = useRef<string>('')
-  const messagesRef       = useRef<Message[]>([])
-  const trustRef          = useRef(10)
-  const progressRef       = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
-  const sessionMsgRef     = useRef(0)
-  const characterRef      = useRef(character)
+  const messagesEndRef         = useRef<HTMLDivElement>(null)
+  const textareaRef            = useRef<HTMLTextAreaElement>(null)
+  const hasInitialized         = useRef(false)
+  const hasSavedSession        = useRef(false)
+  const lastContextRef         = useRef('')
+  const messagesRef            = useRef<Message[]>([])
+  const trustRef               = useRef(10)
+  const progressRef            = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
+  const sessionMsgRef          = useRef(0)
+  const characterRef           = useRef(character)
+  const apiKeyRef              = useRef('')
 
-  useEffect(() => { messagesRef.current   = messages       }, [messages])
-  useEffect(() => { trustRef.current      = trust          }, [trust])
-  useEffect(() => { progressRef.current   = progress       }, [progress])
-  useEffect(() => { sessionMsgRef.current = sessionMsgCount }, [sessionMsgCount])
+  useEffect(() => { messagesRef.current   = messages         }, [messages])
+  useEffect(() => { trustRef.current      = trust            }, [trust])
+  useEffect(() => { progressRef.current   = progress         }, [progress])
+  useEffect(() => { sessionMsgRef.current = sessionMsgCount  }, [sessionMsgCount])
+  useEffect(() => { apiKeyRef.current     = apiKey           }, [apiKey])
 
+  // Horloge diégétique
   useEffect(() => {
     initDiegeticTime()
     const tick = () => setDiegeticTime(formatDiegeticDate())
@@ -132,27 +116,39 @@ export default function ConversationPage() {
     return () => clearInterval(id)
   }, [])
 
+  // Autofocus desktop après chaque réponse
+  useEffect(() => {
+    if (!isLoading && messages.length > 0 && !sessionEnded && !isMobile()) {
+      textareaRef.current?.focus()
+    }
+  }, [isLoading, messages.length, sessionEnded])
+
+  // Initialisation
   useEffect(() => {
     if (!character || hasInitialized.current) return
     hasInitialized.current = true
     characterRef.current   = character
+
+    const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ''
+    setApiKey(savedKey)
+    apiKeyRef.current = savedKey
+
+    if (!savedKey) { setNoApiKey(true); return }
 
     migrateStorageKeys(locationId, characterId)
 
     if (character.schedule) {
       const { openHour, closeHour } = character.schedule
       if (!isWithinSchedule(openHour, closeHour)) {
-        const closedMsg = character.schedule.closedMessage ?? `${character.name} n'est pas disponible à cette heure.`
-        setMessages([{ role: 'assistant', content: closedMsg, timestamp: Date.now() }])
+        const msg = character.schedule.closedMessage ?? `${character.name} n'est pas disponible à cette heure.`
+        setMessages([{ role: 'assistant', content: msg, timestamp: Date.now() }])
         setSessionEnded(true)
         return
       }
     }
 
-    const savedTrust      = localStorage.getItem(storageKeys.trust(characterId))
-    const savedEncounters = localStorage.getItem(storageKeys.encounters(characterId))
-    const currentTrust    = savedTrust      ? parseInt(savedTrust)      : 10
-    const completed       = savedEncounters ? parseInt(savedEncounters) : 0
+    const currentTrust = parseInt(localStorage.getItem(storageKeys.trust(characterId)) ?? '10')
+    const completed    = parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
 
     setTrust(currentTrust)
     trustRef.current = currentTrust
@@ -163,40 +159,27 @@ export default function ConversationPage() {
     progressRef.current = initialProgress
 
     const coreMemoryRaw = localStorage.getItem(storageKeys.coreMemory(characterId))
-    const savedContext  = localStorage.getItem(storageKeys.context(characterId)) ?? ''
-    let lastContext = savedContext
-
+    let lastContext = localStorage.getItem(storageKeys.context(characterId)) ?? ''
     if (coreMemoryRaw) {
-      try {
-        const cm = JSON.parse(coreMemoryRaw)
-        if (cm.content) lastContext = cm.content
-      } catch { /* keep savedContext */ }
+      try { const cm = JSON.parse(coreMemoryRaw); if (cm.content) lastContext = cm.content } catch { /* noop */ }
     }
-
     lastContextRef.current = lastContext
 
-    const absenceCtx = getAbsenceContext(characterId)
+    const violenceCtx = getViolenceReturnContext(characterId)
+    const absenceCtx  = violenceCtx ?? getAbsenceContext(characterId)
 
     if (lastContext) {
       setIsLoading(true)
-      const body: ChatRequest = {
-        locationId,
-        characterId,
-        messages: [],
-        trustLevel: currentTrust,
-        lastContext,
+      const req: ChatRequest = {
+        locationId, characterId, messages: [],
+        trustLevel: currentTrust, lastContext,
         openingMessage: true,
         discoveredClues: initialProgress.discoveredClues,
         mentionedCharacters: [],
-        absenceContext: absenceCtx ?? undefined
+        absenceContext: absenceCtx ?? undefined,
       }
-      fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-        .then(r => r.json())
-        .then((data: ChatResponse) => {
+      sendChatMessage(savedKey, req)
+        .then(data => {
           if (data.reply) {
             const opening: Message = { role: 'assistant', content: data.reply, timestamp: Date.now() }
             setMessages([opening])
@@ -205,8 +188,7 @@ export default function ConversationPage() {
           }
           if (data.trustDelta) {
             const newTrust = Math.max(0, Math.min(100, currentTrust + data.trustDelta))
-            setTrust(newTrust)
-            trustRef.current = newTrust
+            setTrust(newTrust); trustRef.current = newTrust
             localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
           }
           setIsLoading(false)
@@ -219,43 +201,74 @@ export default function ConversationPage() {
     }
   }, [locationId, characterId, character])
 
+  // Sauvegarde au déchargement
   useEffect(() => {
     const handleUnload = () => {
       if (hasSavedSession.current) return
       hasSavedSession.current = true
-      saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
-      distillCoreMemory(
+      saveSession(characterId, messagesRef.current, characterRef.current?.name ?? '')
+      markSessionExit(characterId, 'natural')
+      distillCoreMemory({
+        apiKey: apiKeyRef.current,
         characterId,
-        messagesRef.current,
-        parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
-      )
+        characterName: characterRef.current?.name ?? '',
+        messages: messagesRef.current,
+        sessionCount: parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0'),
+      }).then(mem => {
+        if (mem) {
+          localStorage.setItem(storageKeys.coreMemory(characterId), JSON.stringify({ content: mem, characterId, createdAt: Date.now() }))
+          localStorage.setItem(storageKeys.context(characterId), mem)
+        }
+      })
     }
     window.addEventListener('beforeunload', handleUnload)
     return () => window.removeEventListener('beforeunload', handleUnload)
   }, [locationId, characterId])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  // Scroll auto
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
+  // Notification indice
   useEffect(() => {
     if (newClueFound) {
-      const timer = setTimeout(() => setNewClueFound(null), 4500)
-      return () => clearTimeout(timer)
+      const t = setTimeout(() => setNewClueFound(null), 4500)
+      return () => clearTimeout(t)
     }
   }, [newClueFound])
+
+  // ─── Actions ───────────────────────────────────────────────────────────────
+
+  async function doDistillAndSave(finalMessages: Message[]) {
+    const mem = await distillCoreMemory({
+      apiKey: apiKeyRef.current,
+      characterId,
+      characterName: characterRef.current?.name ?? '',
+      messages: finalMessages,
+      sessionCount: parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0'),
+    })
+    if (mem) {
+      localStorage.setItem(storageKeys.coreMemory(characterId), JSON.stringify({ content: mem, characterId, createdAt: Date.now() }))
+      localStorage.setItem(storageKeys.context(characterId), mem)
+    }
+  }
 
   async function saveAndLeave() {
     if (!hasSavedSession.current) {
       hasSavedSession.current = true
-      saveSession(locationId, characterId, messagesRef.current, characterRef.current?.name ?? '')
+      saveSession(characterId, messagesRef.current, characterRef.current?.name ?? '')
+      markSessionExit(characterId, 'natural')
     }
-    distillCoreMemory(
-      characterId,
-      messagesRef.current,
-      parseInt(localStorage.getItem(storageKeys.encounters(characterId)) ?? '0')
-    )
+    doDistillAndSave(messagesRef.current)
     router.push(`/lieu/${locationId}`)
+  }
+
+  function handleForcedSessionEnd(driftDetected: string | null | undefined, finalMessages: Message[]) {
+    if (hasSavedSession.current) return
+    hasSavedSession.current = true
+    const exitReason: ExitReason = driftDetected === 'violence' ? 'violence' : 'fatigue'
+    saveSession(characterId, finalMessages, characterRef.current?.name ?? '')
+    markSessionExit(characterId, exitReason)
+    doDistillAndSave(finalMessages)
   }
 
   async function sendMessage() {
@@ -274,64 +287,54 @@ export default function ConversationPage() {
     const mentionedCharacters = detectMentionedCharacters(userMessage.content)
     const lastContext = lastContextRef.current
     lastContextRef.current = ''
-
     const absenceCtx = messages.length <= 1 ? getAbsenceContext(characterId) : null
 
     try {
-      const body: ChatRequest = {
-        locationId,
-        characterId,
+      const req: ChatRequest = {
+        locationId, characterId,
         messages: updatedMessages.slice(-20),
         trustLevel: trustRef.current,
         lastContext,
         discoveredClues: progressRef.current.discoveredClues,
         mentionedCharacters,
         absenceContext: absenceCtx ?? undefined,
-        currentLocationName: getCharacter(locationId, characterId)?.name,
-        sessionMessageCount: sessionMsgRef.current
+        sessionMessageCount: sessionMsgRef.current,
       }
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-
-      const data: ChatResponse = await response.json()
+      const data = await sendChatMessage(apiKeyRef.current, req)
 
       if (data.reply) {
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: data.reply,
-          timestamp: Date.now()
-        }
-        const finalMessages = [...updatedMessages, assistantMessage]
+        const assistantMsg: Message = { role: 'assistant', content: data.reply, timestamp: Date.now() }
+        const finalMessages = [...updatedMessages, assistantMsg]
         setMessages(finalMessages)
 
         if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
           const newTrust = Math.max(0, Math.min(100, trustRef.current + data.trustDelta))
-          setTrust(newTrust)
-          trustRef.current = newTrust
+          setTrust(newTrust); trustRef.current = newTrust
           localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
         }
 
-        if (data.newClueIds?.length > 0) {
-          applyNewClues(data.newClueIds)
-        }
+        if (data.newClueIds?.length > 0) applyNewClues(data.newClueIds)
 
         if (data.sessionEnded) {
+          handleForcedSessionEnd(data.driftDetected, finalMessages)
           setSessionEnded(true)
         }
       }
-    } catch (error) {
-      console.error('Erreur sendMessage:', error)
+    } catch (err: unknown) {
+      // Clé invalide — renvoyer à l'accueil
+      if (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 401) {
+        router.push('/')
+        return
+      }
+      console.error('Erreur sendMessage:', err)
     }
 
     setIsLoading(false)
   }
 
   function applyNewClues(clueIds: string[]) {
-    const current = progressRef.current
+    const current  = progressRef.current
     const newClues = clueIds.filter(id => !current.discoveredClues.includes(id))
     if (newClues.length === 0) return
 
@@ -343,7 +346,7 @@ export default function ConversationPage() {
       discoveredClues: updatedDiscovered,
       completedParts:  [...current.completedParts, ...newlyUnlocked],
       isStoryComplete: current.isStoryComplete || storyJustCompleted,
-      completedAt:     storyJustCompleted ? Date.now() : current.completedAt
+      completedAt:     storyJustCompleted ? Date.now() : current.completedAt,
     }
 
     setProgress(newProgress)
@@ -352,17 +355,11 @@ export default function ConversationPage() {
 
     const firstClue = story.clues.find(c => c.id === newClues[0])
     setNewClueFound(firstClue?.content ?? 'Un indice a été révélé.')
-
-    if (storyJustCompleted) {
-      setSessionEnded(true)
-    }
+    if (storyJustCompleted) setSessionEnded(true)
   }
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
   function autoResize(el: HTMLTextAreaElement) {
@@ -370,92 +367,49 @@ export default function ConversationPage() {
     el.style.height = Math.min(el.scrollHeight, 120) + 'px'
   }
 
+  // ─── Rendu ─────────────────────────────────────────────────────────────────
+
   if (!character) {
     return <div style={{ padding: '2rem', fontFamily: "'Raleway', sans-serif" }}>Personnage introuvable.</div>
+  }
+
+  if (noApiKey) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f7f4ef', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem 2rem' }}>
+        <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500&display=swap" rel="stylesheet" />
+        <div style={{ maxWidth: '400px', textAlign: 'center' }}>
+          <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(17px, 1.9vw, 20px)', fontWeight: 300, fontStyle: 'italic', color: '#4a4640', lineHeight: 1.7, marginBottom: '2rem' }}>
+            Aucune clé API configurée.
+          </p>
+          <button onClick={() => router.push('/')} style={{ fontFamily: "'Raleway', sans-serif", fontSize: '13px', fontWeight: 500, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8b6f47', background: 'none', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.65rem 1.25rem', cursor: 'pointer' }}>
+            ← Retour
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const isComplete = progress.isStoryComplete
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      minHeight: '100vh',
-      background: '#f7f4ef',
-      fontFamily: "'Raleway', sans-serif"
-    }}>
-      <link
-        href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500&display=swap"
-        rel="stylesheet"
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f7f4ef', fontFamily: "'Raleway', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500&display=swap" rel="stylesheet" />
 
       {/* Notification indice */}
       {newClueFound && (
-        <div style={{
-          position: 'fixed',
-          bottom: '2rem',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: '#1a1814',
-          color: '#f7f4ef',
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(14px, 1.6vw, 16px)',
-          fontStyle: 'italic',
-          padding: '0.75rem 1.5rem',
-          borderRadius: '2px',
-          zIndex: 100,
-          maxWidth: '90vw',
-          textAlign: 'center'
-        }}>
+        <div style={{ position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1a1814', color: '#f7f4ef', fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(14px, 1.6vw, 16px)', fontStyle: 'italic', padding: '0.75rem 1.5rem', borderRadius: '2px', zIndex: 100, maxWidth: '90vw', textAlign: 'center' }}>
           {newClueFound}
         </div>
       )}
 
       {/* Épilogue */}
       {isComplete && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(26, 24, 20, 0.85)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 200
-        }}>
-          <div style={{
-            background: '#f7f4ef',
-            padding: '3rem',
-            borderRadius: '3px',
-            maxWidth: '420px',
-            textAlign: 'center'
-          }}>
-            <p style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              fontSize: 'clamp(20px, 2.4vw, 26px)',
-              fontWeight: 300,
-              color: '#1a1814',
-              lineHeight: 1.7,
-              marginBottom: '2rem',
-              whiteSpace: 'pre-line'
-            }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,20,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: '#f7f4ef', padding: '3rem', borderRadius: '3px', maxWidth: '420px', textAlign: 'center' }}>
+            <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(20px, 2.4vw, 26px)', fontWeight: 300, color: '#1a1814', lineHeight: 1.7, marginBottom: '2rem', whiteSpace: 'pre-line' }}>
               {story.heart.epilogueMessage}
             </p>
-            <button
-              onClick={() => router.push(`/lieu/${locationId}`)}
-              style={{
-                fontFamily: "'Raleway', sans-serif",
-                fontSize: '14px',
-                fontWeight: 500,
-                letterSpacing: '0.2em',
-                textTransform: 'uppercase',
-                color: '#8b6f47',
-                background: 'none',
-                border: '1px solid #d4cfc6',
-                borderRadius: '2px',
-                padding: '0.75rem 1.5rem',
-                cursor: 'pointer'
-              }}
-            >
+            <button onClick={() => router.push(`/lieu/${locationId}`)} style={{ fontFamily: "'Raleway', sans-serif", fontSize: '14px', fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8b6f47', background: 'none', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1.5rem', cursor: 'pointer' }}>
               Fermer
             </button>
           </div>
@@ -463,106 +417,39 @@ export default function ConversationPage() {
       )}
 
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '1rem 2rem',
-        borderBottom: '1px solid #d4cfc6',
-        background: '#f7f4ef',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10
-      }}>
-        <button
-          onClick={saveAndLeave}
-          style={{
-            fontFamily: "'Raleway', sans-serif",
-            fontSize: 'clamp(13px, 1.4vw, 14px)',
-            fontWeight: 400,
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-            color: '#8a8680',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0
-          }}
-        >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 2rem', borderBottom: '1px solid #d4cfc6', background: '#f7f4ef', position: 'sticky', top: 0, zIndex: 10 }}>
+        <button onClick={saveAndLeave} style={{ fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(13px, 1.4vw, 14px)', fontWeight: 400, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8680', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           ← quitter
         </button>
-        <span style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(20px, 2.4vw, 26px)',
-          fontWeight: 300,
-          color: '#1a1814'
-        }}>
+        <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(20px, 2.4vw, 26px)', fontWeight: 300, color: '#1a1814' }}>
           {character.name}
         </span>
-        <span style={{
-          fontFamily: "'Cormorant Garamond', Georgia, serif",
-          fontSize: 'clamp(12px, 1.3vw, 14px)',
-          fontStyle: 'italic',
-          color: '#8a8680',
-          textAlign: 'right',
-          maxWidth: '140px'
-        }}>
+        <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(12px, 1.3vw, 14px)', fontStyle: 'italic', color: '#8a8680', textAlign: 'right', maxWidth: '140px' }}>
           {diegeticTime}
         </span>
       </div>
 
       {/* Messages */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '3rem 2rem',
-        maxWidth: '680px',
-        width: '100%',
-        margin: '0 auto'
-      }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '3rem 2rem', maxWidth: '680px', width: '100%', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', margin: '0 0 2rem', position: 'relative' }}>
-          <div style={{
-            position: 'absolute', top: '50%', left: 0, right: 0,
-            height: '1px', background: '#d4cfc6'
-          }} />
-          <span style={{
-            position: 'relative',
-            background: '#f7f4ef',
-            padding: '0 1rem',
-            fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: 'clamp(14px, 1.5vw, 16px)',
-            fontStyle: 'italic',
-            color: '#8a8680',
-            letterSpacing: '0.1em'
-          }}>
+          <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '1px', background: '#d4cfc6' }} />
+          <span style={{ position: 'relative', background: '#f7f4ef', padding: '0 1rem', fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(14px, 1.5vw, 16px)', fontStyle: 'italic', color: '#8a8680', letterSpacing: '0.1em' }}>
             {relationLabel(completedEncounters, trust, character.pronoun ?? 'elle')}
           </span>
         </div>
 
-        {messages.map((message, i) => (
-          <MessageBubble key={i} message={message} characterName={character.name} />
+        {messages.map((msg, i) => (
+          <MessageBubble key={i} message={msg} characterName={character.name} />
         ))}
 
         {isLoading && (
           <div style={{ marginBottom: '2rem' }}>
-            <div style={{
-              fontFamily: "'Raleway', sans-serif",
-              fontSize: '14px',
-              fontWeight: 500,
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              color: '#8a8680',
-              marginBottom: '0.4rem'
-            }}>
+            <div style={{ fontFamily: "'Raleway', sans-serif", fontSize: '14px', fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8a8680', marginBottom: '0.4rem' }}>
               {character.name.toUpperCase()}
             </div>
             <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{
-                  width: '4px', height: '4px', borderRadius: '50%',
-                  background: '#c4a882',
-                  animation: `dot 1.2s infinite ease-in-out ${i * 0.2}s`
-                }} />
+              {[0,1,2].map(i => (
+                <div key={i} style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#c4a882', animation: `dot 1.2s infinite ease-in-out ${i * 0.2}s` }} />
               ))}
             </div>
           </div>
@@ -572,23 +459,12 @@ export default function ConversationPage() {
       </div>
 
       {/* Footer */}
-      <div style={{
-        borderTop: '1px solid #d4cfc6',
-        padding: '1.25rem 2rem',
-        background: '#f7f4ef'
-      }}>
+      <div style={{ borderTop: '1px solid #d4cfc6', padding: '1.25rem 2rem', background: '#f7f4ef' }}>
         <div style={{ maxWidth: '680px', margin: '0 auto' }}>
           <TrustBar value={trust} characterName={character.name} />
 
           {sessionEnded && !isComplete ? (
-            <p style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              fontSize: 'clamp(15px, 1.7vw, 17px)',
-              fontStyle: 'italic',
-              color: '#8a8680',
-              textAlign: 'center',
-              padding: '0.75rem 0'
-            }}>
+            <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(15px, 1.7vw, 17px)', fontStyle: 'italic', color: '#8a8680', textAlign: 'center', padding: '0.75rem 0' }}>
               La conversation s'est refermée.
             </p>
           ) : (
@@ -596,51 +472,17 @@ export default function ConversationPage() {
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={e => {
-                  setInput(e.target.value)
-                  autoResize(e.target)
-                }}
+                onChange={e => { setInput(e.target.value); autoResize(e.target) }}
                 onKeyDown={handleKey}
                 disabled={isLoading || sessionEnded}
                 placeholder="Dites quelque chose…"
                 rows={1}
-                style={{
-                  flex: 1,
-                  fontFamily: "'Raleway', sans-serif",
-                  fontSize: 'clamp(14px, 1.6vw, 16px)',
-                  fontWeight: 300,
-                  color: '#1a1814',
-                  background: '#ede9e2',
-                  border: '1px solid #d4cfc6',
-                  borderRadius: '2px',
-                  padding: '0.75rem 1rem',
-                  resize: 'none',
-                  outline: 'none',
-                  minHeight: '44px',
-                  maxHeight: '120px',
-                  lineHeight: '1.5',
-                  opacity: sessionEnded ? 0.4 : 1
-                }}
+                style={{ flex: 1, fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(14px, 1.6vw, 16px)', fontWeight: 300, color: '#1a1814', background: '#ede9e2', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1rem', resize: 'none', outline: 'none', minHeight: '44px', maxHeight: '120px', lineHeight: '1.5', opacity: sessionEnded ? 0.4 : 1 }}
               />
               <button
                 onClick={sendMessage}
                 disabled={isLoading || !input.trim() || sessionEnded}
-                style={{
-                  fontFamily: "'Raleway', sans-serif",
-                  fontSize: 'clamp(13px, 1.4vw, 14px)',
-                  fontWeight: 500,
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  color: '#8b6f47',
-                  background: 'none',
-                  border: '1px solid #d4cfc6',
-                  borderRadius: '2px',
-                  padding: '0.75rem 1.25rem',
-                  cursor: (isLoading || !input.trim() || sessionEnded) ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  height: '44px',
-                  opacity: (isLoading || !input.trim() || sessionEnded) ? 0.4 : 1
-                }}
+                style={{ fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(13px, 1.4vw, 14px)', fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8b6f47', background: 'none', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1.25rem', cursor: (isLoading || !input.trim() || sessionEnded) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', height: '44px', opacity: (isLoading || !input.trim() || sessionEnded) ? 0.4 : 1 }}
               >
                 Envoyer
               </button>
