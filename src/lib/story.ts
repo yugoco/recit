@@ -1,187 +1,259 @@
+/**
+ * src/lib/story.ts
+ *
+ * Le cœur du récit — "Les mains propres"
+ * Montréal, Sud-Ouest, contemporain.
+ *
+ * Vérité centrale : la fraude des fonds de pension des années 70
+ * n'a pas été commise par Fernand Beausoleil. Il a été le bouc émissaire
+ * d'un réseau de notables dont les noms ornent aujourd'hui les plaques
+ * de rue et les édifices municipaux du Sud-Ouest.
+ */
+
 import { locations } from './locations'
 
+// ─── Types — Personnage ───────────────────────────────────────────────────────
+
 export interface Clue {
-    id: string
-    revealedBy: string
-    content: string
-    trustRequired: number
+  id: string
+  revealedBy: string
+  content: string
+  trustRequired: number
 }
 
 export interface Part {
-    id: string
-    title: string
-    unlockedByDefault: boolean
-    requiredClues: string[]
-    // Phase 4 — l'épilogue marque la fin de l'œuvre
-    isEpilogue?: boolean
+  id: string
+  title: string
+  unlockedByDefault: boolean
+  requiredClues: string[]
+  isEpilogue?: boolean
 }
 
 export interface CharacterRelation {
-    knowsAbout: string[]
-    sharedEvents: string[]
-    canReactTo: Record<string, string>
+  knowsAbout: string[]
+  sharedEvents: string[]
+  canReactTo: Record<string, string>
+}
+
+// ─── Types — Cœur du récit ────────────────────────────────────────────────────
+
+export interface CharacterVersion {
+  characterId: string
+  believes: string
+  conceals: string
+  ignores: string
+}
+
+export interface NarrativeNode {
+  id: string
+  type: 'contradiction' | 'pivotDetail' | 'keyQuestion'
+  description: string
+  involvedCharacters: string[]
+  unlockedByClues?: string[]
+}
+
+export interface Heart {
+  truth: string
+  involvedCharacters: string[]
+  when: string
+  where: string
+  whyHidden: string
+  characterVersions: CharacterVersion[]
+  parts: Part[]
+  narrativeNodes: NarrativeNode[]
+  epilogueMessage: string
 }
 
 export interface Story {
-    truth: string
-    parts: Part[]
-    clues: Clue[]
-    characterRelations: Record<string, CharacterRelation>
-    epilogueMessage: string // message affiché quand isStoryComplete devient true
+  heart: Heart
+  clues: Clue[]
+  characterRelations: Record<string, CharacterRelation>
 }
+
+// ─── Le cœur du récit ─────────────────────────────────────────────────────────
 
 export const story: Story = {
 
-    truth: `[PLACEHOLDER — vérité centrale]
-  Ceci est ce qui s'est réellement passé. Cette version n'est jamais montrée 
-  directement au lecteur — elle est la mesure contre laquelle on évalue 
-  ce que le lecteur a découvert.`,
+  heart: {
+    truth: `En 1973, la fermeture des usines du Sud-Ouest de Montréal s'est accompagnée 
+d'une fraude massive sur les fonds de pension de plusieurs centaines de familles ouvrières. 
+Fernand Beausoleil, délégué syndical respecté, a été accusé, jugé et emprisonné pour ce vol. 
+Il n'en était pas l'auteur.
 
-    epilogueMessage: `Vous avez percé le secret d'Élise Moreau.
-Ce que vous avez trouvé ne peut pas être défait.
-L'histoire se referme ici — mais vous pouvez relire ce qui s'est dit.`,
+L'argent a été détourné par un réseau de quatre hommes : un avocat d'affaires, 
+un comptable municipal, un promoteur immobilier et un conseiller politique. 
+Ils ont utilisé les fonds pour acquérir à vil prix des terrains contaminés 
+du Sud-Ouest — des terrains que personne ne voulait, que tout le monde fuyait. 
+Ils ont attendu. Décontaminé discrètement. Revendu ou développé décennie après décennie.
+
+Ces quatre hommes sont aujourd'hui morts. Leurs noms ornent des rues, 
+des bibliothèques, des arénas du Sud-Ouest. Leurs enfants et petits-enfants 
+vivent sur cette fortune sans en connaître l'origine.
+
+Fernand Beausoleil a tout su. Il a gardé un carnet chiffré — qu'il appelait 
+son "livre de recettes" — contenant les noms, les dates, les montants et 
+les numéros de comptes. Une assurance-vie qu'il n'a jamais utilisée. 
+Il est mort sans l'avoir transmise à personne. Sauf peut-être à Carole, 
+sa fille, qui a retrouvé des documents après sa mort.`,
+
+    involvedCharacters: ['martine', 'carole'],
+    when: '1973 — et aujourd\'hui',
+    where: 'Sud-Ouest de Montréal — usines, terrains, canal Lachine',
+    whyHidden: `Fernand s'est tu pour protéger Martine et Carole — il craignait des représailles. 
+Les quatre hommes avaient du pouvoir, des avocats, des contacts. 
+Après sa condamnation, briser le silence aurait signifié recommencer un procès 
+qu'il savait perdu d'avance. Il a choisi de garder le carnet comme une dernière 
+forme de dignité — la preuve qu'il savait, même si personne d'autre ne le savait.`,
+
+    characterVersions: [
+      {
+        characterId: 'martine',
+        believes: 'Fernand était innocent — "tout le monde le savait dans le quartier". Le livre de recettes est un cahier de cuisine avec une recette de tourtière extraordinaire.',
+        conceals: 'Rien volontairement. Elle ne sait pas ce qu\'elle cache.',
+        ignores: 'La vraie nature du carnet. Les noms des quatre hommes. Le fait que Carole sait déjà quelque chose.'
+      }
+    ],
 
     parts: [
-        {
-            id: 'part-1',
-            title: 'Les apparences',
-            unlockedByDefault: true,
-            requiredClues: ['clue-1', 'clue-2']
-        },
-        {
-            id: 'part-2',
-            title: 'Les fissures',
-            unlockedByDefault: false,
-            requiredClues: ['clue-3', 'clue-4']
-        },
-        {
-            id: 'part-3',
-            title: 'Le cœur',
-            unlockedByDefault: false,
-            requiredClues: [],
-            isEpilogue: true // Phase 4 — débloquer cette partie clôt l'œuvre
-        }
+      {
+        id: 'part-1',
+        title: 'Le banc',
+        unlockedByDefault: true,
+        requiredClues: []
+      },
+      {
+        id: 'part-2',
+        title: 'Le quartier',
+        unlockedByDefault: false,
+        requiredClues: ['clue-martine-1', 'clue-martine-3']
+      },
+      {
+        id: 'part-3',
+        title: 'Les archives',
+        unlockedByDefault: false,
+        requiredClues: []   // à compléter avec les clues du chapitre 2
+      },
+      {
+        id: 'part-4',
+        title: 'L\'argent',
+        unlockedByDefault: false,
+        requiredClues: []   // à compléter avec les clues du chapitre 3
+      },
+      {
+        id: 'part-5',
+        title: 'Les mains propres',
+        unlockedByDefault: false,
+        requiredClues: [],  // à compléter avec les clues du chapitre 4-5
+        isEpilogue: true
+      }
     ],
 
-    clues: [
-        {
-            id: 'clue-1',
-            revealedBy: 'elise',
-            content: `[PLACEHOLDER] Élise mentionne une erreur ancienne sans la nommer.`,
-            trustRequired: 40
-        },
-        {
-            id: 'clue-2',
-            revealedBy: 'elise',
-            content: `[PLACEHOLDER] Élise parle de Marie pour la première fois.`,
-            trustRequired: 65
-        },
-        {
-            id: 'clue-3',
-            revealedBy: 'thomas',
-            content: `[PLACEHOLDER] Thomas donne sa version de 1947.`,
-            trustRequired: 50
-        },
-        {
-            id: 'clue-4',
-            revealedBy: 'thomas',
-            content: `[PLACEHOLDER] Thomas contredit ce qu'Élise a dit.`,
-            trustRequired: 70
-        }
+    narrativeNodes: [
+      {
+        id: 'node-livre-dehors',
+        type: 'pivotDetail',
+        description: 'Martine mentionne que le livre était conservé "en dehors de la maison". Un cahier de cuisine ne se garde pas hors de chez soi.',
+        involvedCharacters: ['martine'],
+        unlockedByClues: ['clue-martine-1']
+      },
+      {
+        id: 'node-phrase-fernand',
+        type: 'keyQuestion',
+        description: '"Ce livre-là, tu le donnes à personne." — la phrase que Fernand a dite à Martine. C\'est la première preuve que le carnet n\'est pas anodin.',
+        involvedCharacters: ['martine'],
+        unlockedByClues: ['clue-martine-2']
+      },
+      {
+        id: 'node-carole-sait',
+        type: 'contradiction',
+        description: 'Martine dit que Carole "a jamais pardonné à son père". Mais Carole a retrouvé des documents. Sa colère n\'est peut-être pas ce qu\'elle semble être.',
+        involvedCharacters: ['martine', 'carole'],
+        unlockedByClues: ['clue-martine-3']
+      }
     ],
 
-    characterRelations: {
-        elise: {
-            knowsAbout: ['thomas'],
-            sharedEvents: ['evenement-1947'],
-            canReactTo: {
-                thomas: `Tu connais Thomas — vous étiez tous les deux présents en 1947. 
-Tu ne l'aimes pas particulièrement, mais tu le respectes. 
-Si le lecteur mentionne quelque chose que Thomas lui a dit, 
-tu réagis avec une légère tension — surtout si c'est une version 
-différente de la tienne. Tu ne l'attaques pas directement, 
-mais tu corriges avec précision.`
-            }
-        },
-        thomas: {
-            knowsAbout: ['elise'],
-            sharedEvents: ['evenement-1947'],
-            canReactTo: {
-                elise: `Tu connais Élise depuis longtemps. Tu la respectes en tant que médecin,
-mais tu crois qu'elle se ment à elle-même sur ce qui s'est passé en 1947.
-Si le lecteur mentionne ce qu'Élise lui a dit, tu écoutes attentivement
-avant de donner ta version — plus factuelle, moins chargée émotionnellement.`
-            }
-        }
+    epilogueMessage: `Vous avez reconstitué ce que Fernand Beausoleil n'a jamais pu dire.
+Les noms sur les plaques de rue ne changeront pas.
+Mais vous savez maintenant ce qu'ils recouvrent.`
+  },
+
+  // Peuplés automatiquement par registerCharacter()
+  clues: [],
+  characterRelations: {}
+}
+
+// ─── Injection depuis locations.ts ────────────────────────────────────────────
+
+export function registerCharacter(
+  clues: Clue[],
+  relation: { characterId: string; data: CharacterRelation }
+): void {
+  clues.forEach(clue => {
+    if (!story.clues.find(c => c.id === clue.id)) {
+      story.clues.push(clue)
     }
+  })
+  story.characterRelations[relation.characterId] = relation.data
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function getCluesForCharacter(characterId: string): Clue[] {
-    return story.clues.filter(c => c.revealedBy === characterId)
+  return story.clues.filter(c => c.revealedBy === characterId)
 }
 
 export function getRelation(characterId: string): CharacterRelation | undefined {
-    return story.characterRelations[characterId]
+  return story.characterRelations[characterId]
 }
 
 export function detectMentionedCharacters(userInput: string): string[] {
-    const mentioned: string[] = []
-    const input = userInput.toLowerCase()
+  const mentioned: string[] = []
+  const input = userInput.toLowerCase()
 
-    Object.keys(story.characterRelations).forEach(charId => {
-        let displayName: string | undefined
-        for (const location of locations) {
-            const character = location.characters.find(c => c.id === charId)
-            if (character) { displayName = character.name; break }
-        }
-        if (!displayName) return
+  Object.keys(story.characterRelations).forEach(charId => {
+    let displayName: string | undefined
+    for (const location of locations) {
+      const character = location.characters.find(c => c.id === charId)
+      if (character) { displayName = character.name; break }
+    }
+    if (!displayName) return
 
-        const nameNormalized  = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-        const inputNormalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        const regex = new RegExp(`\\b${nameNormalized}\\b`)
-        if (regex.test(inputNormalized)) mentioned.push(charId)
-    })
+    const nameNormalized  = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const inputNormalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    const regex = new RegExp(`\\b${nameNormalized}\\b`)
+    if (regex.test(inputNormalized)) mentioned.push(charId)
+  })
 
-    return mentioned
+  return mentioned
 }
 
 export function isPartUnlocked(partId: string, discoveredClues: string[]): boolean {
-    const part = story.parts.find(p => p.id === partId)
-    if (!part) return false
-    if (part.unlockedByDefault) return true
+  const part = story.heart.parts.find(p => p.id === partId)
+  if (!part) return false
+  if (part.unlockedByDefault) return true
 
-    const partIndex = story.parts.findIndex(p => p.id === partId)
-    if (partIndex === 0) return true
-    const previousPart = story.parts[partIndex - 1]
-    return previousPart.requiredClues.every(clueId => discoveredClues.includes(clueId))
+  const partIndex = story.heart.parts.findIndex(p => p.id === partId)
+  if (partIndex === 0) return true
+  const previousPart = story.heart.parts[partIndex - 1]
+  return previousPart.requiredClues.every(clueId => discoveredClues.includes(clueId))
 }
 
 export function computeNewlyUnlockedParts(
-    completedParts: string[],
-    discoveredClues: string[]
+  completedParts: string[],
+  discoveredClues: string[]
 ): string[] {
-    const newlyUnlocked: string[] = []
-    story.parts.forEach(part => {
-        if (
-            !part.unlockedByDefault &&
-            !completedParts.includes(part.id) &&
-            isPartUnlocked(part.id, discoveredClues)
-        ) {
-            newlyUnlocked.push(part.id)
-        }
-    })
-    return newlyUnlocked
+  return story.heart.parts
+    .filter(part =>
+      !part.unlockedByDefault &&
+      !completedParts.includes(part.id) &&
+      isPartUnlocked(part.id, discoveredClues)
+    )
+    .map(part => part.id)
 }
 
-/**
- * Phase 4 — Vérifie si l'épilogue vient d'être débloqué.
- * Retourne true si une des parties nouvellement débloquées est marquée isEpilogue.
- */
 export function checkStoryComplete(newlyUnlockedPartIds: string[]): boolean {
-    return newlyUnlockedPartIds.some(id => {
-        const part = story.parts.find(p => p.id === id)
-        return part?.isEpilogue === true
-    })
+  return newlyUnlockedPartIds.some(id => {
+    const part = story.heart.parts.find(p => p.id === id)
+    return part?.isEpilogue === true
+  })
 }
