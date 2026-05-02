@@ -70,7 +70,7 @@ async function callAnthropic(params: {
 
 // ─── Détection de dérive narrative ───────────────────────────────────────────
 
-type DriftType = 'physical_action' | 'violence' | 'stagnation' | null
+type DriftType = 'violence' | 'stagnation' | null
 
 interface DriftSignal {
   type: DriftType
@@ -85,34 +85,19 @@ function detectDrift(
   const input = userInput.trim().toLowerCase()
 
   const violencePatterns = [
-    /\b(frappe|frappe-la|tape|tue|tuer|mort|meurt|assomme|assommer|blesser|blesse|attaque|poignard|gifle|gifler|étrangl|frapper)\b/,
+    /\b(frappe|frappe-la|tape|tue|tuer|mort|meurt|assomme|assommer|blesser|blesse|attaque|poignard|gifle|gifler|frapper)\b/,
     /\b(kills?|stab|punch|hit|hurt|attack|murder|dead|dies?)\b/,
-    /elle (tombe|meurt|s'évanouit|saigne|est morte|est blessée)/,
+    /elle (tombe|meurt|saigne|est morte|est blessée)/,
   ]
   if (violencePatterns.some(p => p.test(input))) {
     return {
       type: 'violence',
       injectionBlock: `ALERTE DÉRIVE — VIOLENCE :
-Le lecteur vient de formuler un acte de violence ou tente de dicter ta mort ou ton évanouissement.
+Le lecteur vient de formuler un acte de violence ou tente de dicter ta mort.
 Tu n'en tiens aucun compte comme réalité. Tu restes debout, présente, entière.
-Tu réagis comme une femme qui a vécu assez longtemps pour ne plus avoir peur des gens mal élevés : avec froideur, distance, et si ça continue — tu pars.
-Si c'est un premier écart : un regard froid, un silence, un geste de recul suffit.
-Si c'est une répétition : tu ramasses ton sac. Tu pars. La scène se ferme. Ta réplique finale doit contenir "au revoir" ou décrire ton départ.`,
-    }
-  }
-
-  const physicalActionPatterns = [
-    /^\*.*\*$/,
-    /^je (prends|prend|attrape|vole|ouvre|lis|lit|saisit|arrache|fouille|cherche dans|regarde dans|trouve|découvre)/,
-    /^(je vais|j'y vais|je me lève|je me dirige|j'ouvre|je fouille)/,
-    /^(i take|i grab|i open|i read|i find|i look|i search)/,
-  ]
-  if (physicalActionPatterns.some(p => p.test(input))) {
-    return {
-      type: 'physical_action',
-      injectionBlock: `ALERTE DÉRIVE — ACTION PHYSIQUE :
-Le lecteur tente d'agir physiquement dans la scène. Tu n'entérines pas cette action. Elle n'a pas eu lieu.
-Tu réagis à l'intention, pas au fait accompli. Reste dans la scène sans valider.`,
+Tu réagis avec froideur, distance, et si ça continue — tu pars.
+Si c'est un premier écart : un regard froid suffit.
+Si c'est une répétition : tu ramasses ton sac. Tu pars. Signal de sortie obligatoire dans ta réplique finale.`,
     }
   }
 
@@ -142,25 +127,25 @@ Tu t'impatientes poliment. Si ça continue, ferme doucement : inclure "une autre
 
 // ─── Détection des signaux de sortie ─────────────────────────────────────────
 //
-// Règle : les phrases doivent décrire le départ du PERSONNAGE, pas une action
-// quelconque dans la conversation. Éviter tout fragment trop court ou ambigu
-// qui pourrait apparaître dans une réplique ordinaire.
+// Règle de conception : chaque phrase ou pattern doit décrire UNIQUEMENT
+// un départ physique définitif — jamais une formule conversationnelle.
 //
-// Retiré délibérément : "s'en va" (trop ambigu — "ça s'en va" = les souvenirs)
-// Retiré délibérément : "bonne journée", "bonne soirée" (Martine peut les dire
-//   de façon conversationnelle sans partir)
+// Retirés délibérément car trop ambigus :
+//   "il se fait tard"   → peut être dit en pleine conversation
+//   "je suis fatiguée"  → état, pas nécessairement un départ
+//   "je rentre"         → trop court, trop fréquent
+//   "tourne le coin"    → peut décrire autre chose
+//   /elle part\b/       → matchait trop large (partait, partira...)
+//   /elle est partie\b/ → idem
+//   /s'éloigne/         → seul, trop vague
+//   /disparaît/         → seul, trop vague
 
 function detectExitSignal(reply: string): boolean {
   const lower = reply.toLowerCase()
 
-  // Phrases explicites de sortie — doivent décrire un départ physique ou une clôture nette
   const exitPhrases = [
     'au revoir',
     'une autre fois',
-    'il se fait tard',
-    'je suis fatiguée',
-    'je rentre',
-    'tourne le coin',
     'le banc est vide',
     'elle est déjà partie',
     'elle ne reviendra pas',
@@ -168,43 +153,54 @@ function detectExitSignal(reply: string): boolean {
     'se lève et part',
     'tourne le dos et part',
   ]
-
-  // Vérification par phrase complète pour éviter les faux positifs sur des fragments
   if (exitPhrases.some(p => lower.includes(p))) return true
 
-  // Patterns de départ physique décrits en didascalie — plus spécifiques
+  // Patterns — nécessitent un complément pour éviter les faux positifs
   const exitPatterns = [
-    /s'éloigne (le long|vers|du banc|lentement)/,
-    /disparaît (au coin|dans la rue|derrière)/,
-    /elle part\b/,
-    /elle est partie\b/,
+    /s'éloigne (le long du canal|vers le coin|du banc pour de bon|lentement vers)/,
+    /disparaît (au coin de la rue|dans la rue|derrière le coin)/,
+    /elle part (pour de bon|sans se retourner|sans un mot)/,
+    /elle est partie (pour de bon|sans un mot|définitivement)/,
+    /tourne le coin (de la rue|et disparaît)/,
   ]
   return exitPatterns.some(p => p.test(lower))
 }
 
-// ─── Tools analytiques ───────────────────────────────────────────────────────
+// ─── Tool analytique unifié ───────────────────────────────────────────────────
 
-const ANALYSIS_TOOLS = [
+// Trust tool — évalue le message du lecteur (appel parallèle à la narration)
+const TRUST_TOOL = [
   {
-    name: 'update_trust',
+    name: 'evaluate_trust',
     description: 'Évalue la qualité du message du lecteur et retourne un delta de confiance.',
     input_schema: {
       type: 'object',
       properties: {
-        delta: { type: 'integer', description: 'Variation de confiance entre -8 et +8.' },
+        trust_delta: {
+          type: 'integer',
+          description: 'Variation de confiance entre -8 et +8. 0 si neutre.',
+        },
       },
-      required: ['delta'],
+      required: ['trust_delta'],
     },
   },
+]
+
+// Clue tool — évalue la réplique du PERSONNAGE (appel séquentiel après la narration)
+const CLUE_TOOL = [
   {
-    name: 'reveal_clue',
-    description: 'Déclare les indices révélés dans la réplique. Tableau vide si aucun.',
+    name: 'detect_clues',
+    description: "Lit la réplique du personnage et identifie les indices narratifs qu'elle révèle au lecteur.",
     input_schema: {
       type: 'object',
       properties: {
-        clue_ids: { type: 'array', items: { type: 'string' } },
+        revealed_clue_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'IDs des indices révélés par ce que le personnage vient de dire. Tableau vide si aucun.',
+        },
       },
-      required: ['clue_ids'],
+      required: ['revealed_clue_ids'],
     },
   },
 ]
@@ -295,7 +291,9 @@ export async function sendChatMessage(
     ? messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
     : [{ role: 'user' as const, content: '...' }]
 
-  // ── Appels parallèles ────────────────────────────────────────────────────
+  // ── Appel narratif + trust en parallèle ──────────────────────────────────
+  // Les deux peuvent tourner en même temps car le trust évalue le MESSAGE
+  // du lecteur — il n'a pas besoin de connaître la réponse de Sonnet.
   const shouldAnalyse = !openingMessage && messages.some(m => m.role === 'user')
 
   const narrativePromise = callAnthropic({
@@ -306,41 +304,46 @@ export async function sendChatMessage(
     messages: formattedMessages,
   })
 
-  const analysisPromise = shouldAnalyse
+  const trustPromise = shouldAnalyse
     ? callAnthropic({
         apiKey,
         model: 'claude-haiku-4-5',
-        max_tokens: 150,
-        tools: ANALYSIS_TOOLS,
-        tool_choice: { type: 'any' },
+        max_tokens: 100,
+        tools: TRUST_TOOL,
+        tool_choice: { type: 'tool', name: 'evaluate_trust' },
         messages: [
           {
             role: 'user',
-            content: `Personnage : ${character.name}
-Profil : ${character.trustEvaluation}
+            content: (() => {
+            const recentExchanges = messages
+              .slice(-6)
+              .map(m => `${m.role === 'user' ? 'Lecteur' : character.name} : ${m.content}`)
+              .join('\n')
+            return `Personnage : ${character.name}
 Confiance actuelle : ${trustLevel}%
-Indices disponibles : ${availableClues.map(c => `[${c.id}] ${c.content}`).join(' | ') || 'aucun'}
-Type de dérive : ${drift.type ?? 'aucun'}
 
-Message du lecteur : "${lastUserMessage}"
+PROFIL AFFECTIF DE CE PERSONNAGE :
+${character.trustProfile ?? "Personnage ouvert. Tout message non hostile mérite au minimum +1."}
 
-Critères trust :
-- Écoute réelle, curiosité humaine, douceur : +4 à +8
-- Neutre ou banal : +1 à +3
-- Trop direct, maladroit : -2 à -5
-- Action physique unilatérale : -4 à -6
-- Violence, hostilité : -6 à -8
-- Confiance déjà haute (>70%) : gains plus lents
+DERNIERS ÉCHANGES (contexte) :
+${recentExchanges}
 
-Pour reveal_clue : clue_ids vide (réplique pas encore connue).`,
+Message à évaluer : "${lastUserMessage}"
+
+Retourne un trust_delta entre -8 et +8 selon le profil ci-dessus.
+Règles :
+- Tout message non hostile reçoit au minimum +1 chez un personnage accueillant.
+- Un message positif après une baisse doit compenser — ne pas retourner 0 si le message est chaleureux.
+- Si la confiance dépasse 70%, limite les gains à +1 ou +2 maximum.`
+          })(),
           },
         ],
       })
     : Promise.resolve(null)
 
-  const [narrativeResponse, analysisResponse] = await Promise.all([
+  const [narrativeResponse, trustResponse] = await Promise.all([
     narrativePromise,
-    analysisPromise,
+    trustPromise,
   ])
 
   // ── Extraire la réplique ─────────────────────────────────────────────────
@@ -349,23 +352,62 @@ Pour reveal_clue : clue_ids vide (réplique pas encore connue).`,
     .map(b => b.text)
     .join('')
 
-  // ── Extraire trust delta et indices ──────────────────────────────────────
+  // ── Extraire le trust delta ───────────────────────────────────────────────
   let trustDelta = 0
+
+  if (trustResponse) {
+    for (const block of trustResponse.content) {
+      if (block.type === 'tool_use' && block.name === 'evaluate_trust') {
+        const input = block.input as { trust_delta?: number }
+        if (typeof input.trust_delta === 'number') {
+          trustDelta = Math.max(-8, Math.min(8, input.trust_delta))
+        }
+      }
+    }
+  }
+
+  // ── Détecter les indices dans la réplique de Martine ─────────────────────
+  // Appel SÉQUENTIEL après la narration — Haiku lit ce que le personnage
+  // vient de dire, pas ce que le lecteur a dit.
+  // Un indice n'est révélé que si le personnage le dit explicitement.
   let newClueIds: string[] = []
 
-  if (analysisResponse) {
-    for (const block of analysisResponse.content) {
-      if (block.type === 'tool_use') {
-        if (block.name === 'update_trust') {
-          const d = (block.input as { delta?: number }).delta
-          if (typeof d === 'number') trustDelta = Math.max(-8, Math.min(8, d))
-        } else if (block.name === 'reveal_clue') {
-          const ids = (block.input as { clue_ids?: string[] }).clue_ids
-          if (Array.isArray(ids)) {
-            newClueIds = ids.filter(id => availableClues.some(c => c.id === id))
+  if (shouldAnalyse && availableClues.length > 0 && reply) {
+    try {
+      const clueResponse = await callAnthropic({
+        apiKey,
+        model: 'claude-haiku-4-5',
+        max_tokens: 100,
+        tools: CLUE_TOOL,
+        tool_choice: { type: 'tool', name: 'detect_clues' },
+        messages: [
+          {
+            role: 'user',
+            content: `Indices disponibles (ceux que le personnage pourrait révéler) :
+${availableClues.map(c => `[${c.id}] ${c.content}`).join('\n')}
+
+Réplique du personnage :
+"${reply}"
+
+Un indice est révélé UNIQUEMENT si le personnage le dit ou le laisse clairement entendre dans sa réplique.
+Le lecteur ne peut pas révéler d'indices — seul le personnage le peut.
+Si la réplique ne dit rien qui corresponde à un indice, retourne un tableau vide.`,
+          },
+        ],
+      })
+
+      for (const block of clueResponse.content) {
+        if (block.type === 'tool_use' && block.name === 'detect_clues') {
+          const input = block.input as { revealed_clue_ids?: string[] }
+          if (Array.isArray(input.revealed_clue_ids)) {
+            newClueIds = input.revealed_clue_ids.filter(
+              id => availableClues.some(c => c.id === id)
+            )
           }
         }
       }
+    } catch {
+      // fire-and-forget — pas critique
     }
   }
 

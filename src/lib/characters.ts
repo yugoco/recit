@@ -1,5 +1,10 @@
 /**
  * src/lib/characters.ts
+ *
+ * Template structuré pour la conception des personnages de Récit.
+ * Le systemPrompt reste manuel (champ `systemPrompt` dans CharacterBlueprint).
+ * Tous les autres champs utilisés par l'application (trustEvaluation, clues,
+ * characterRelations) sont générés automatiquement par buildCharacter().
  */
 
 import { Character } from './types'
@@ -71,6 +76,11 @@ export interface CharacterBlueprint {
   // Description courte affichée dans la carte personnage (page lieu)
   // Si absent, utilise identity.profession comme fallback
   displayDescription?: string
+  // Profil de réception affective — utilisé par Haiku pour évaluer le trust.
+  // Décrit comment ce personnage réagit au contact humain brut, indépendamment
+  // du contenu narratif. Chaque personnage a des dispositions différentes.
+  // Ex : Martine (démence douce, cherche compagnie) vs Carole (méfiante, fermée).
+  trustProfile: string
   pronoun: 'elle' | 'il'
   available?: boolean
   unavailableReason?: string
@@ -89,12 +99,15 @@ export function buildCharacter(bp: CharacterBlueprint): {
   relation: { characterId: string; data: CharacterRelation }
 } {
   const pronoun   = bp.pronoun
-  const subject   = pronoun === 'elle' ? 'Elle'     : 'Il'
-  const object    = pronoun === 'elle' ? 'la'       : 'le'
-  const reflexive = pronoun === 'elle' ? 'qu\'elle'  : 'qu\'il'
+  const subject   = pronoun === 'elle' ? 'Elle'    : 'Il'
+  const object    = pronoun === 'elle' ? 'la'      : 'le'
+  const reflexive = pronoun === 'elle' ? 'qu\'elle' : 'qu\'il'
 
   const trustEvaluation = `${bp.identity.name} est ${bp.identity.profession}.
 ${bp.identity.speechStyle}
+
+PROFIL AFFECTIF (priorité sur les critères généraux) :
+${bp.trustProfile}
 
 ${subject} apprécie : ${bp.resistanceLayers.low} (niveau de base), et s'ouvre progressivement avec la confiance.
 ${subject} se ferme face à : les approches trop directes, la flatterie détectée, la pression.
@@ -143,6 +156,7 @@ Si le lecteur le mentionne : ${bond.reactionIfMentioned}`
     intro: bp.intro,
     systemPrompt: bp.systemPrompt,
     trustEvaluation,
+    trustProfile: bp.trustProfile,
     pronoun: bp.pronoun,
     locationContext: bp.locationContext,
     schedule: bp.schedule,

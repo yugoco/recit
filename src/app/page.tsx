@@ -3,25 +3,18 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { locations } from '@/lib/locations'
+import { story } from '@/lib/story'
 import { storageKeys } from '@/lib/time'
-import { API_KEY_STORAGE_KEY } from '@/lib/types'
+import { API_KEY_STORAGE_KEY, ReaderProgress } from '@/lib/types'
 
-// ─── Titre — options littéraires ──────────────────────────────────────────────
-//
-// Décommenter une seule ligne.
-//
-// Option A — le double sens le plus immédiat : recette culinaire / recettes d'argent
+// ─── Titre ────────────────────────────────────────────────────────────────────
 const TITRE = 'Les recettes du Sud-Ouest'
-// Option B — la recette comme formule secrète, presque alchimique
 // const TITRE = 'La recette des honnêtes gens'
-// Option C — possessif + ambigu : le livre appartient encore à quelqu'un
 // const TITRE = 'Le livre de recettes'
-// Option D — ironique, sonne comme un titre de pamphlet politique
 // const TITRE = 'Comment réussir dans le Sud-Ouest'
-// Option E — le plus elliptique, laisse tout à l'imagination
 // const TITRE = 'Les ingrédients'
 
-// ─── Texte de la modale d'aide ────────────────────────────────────────────────
+// ─── Texte aide ───────────────────────────────────────────────────────────────
 
 const API_KEY_HELP = `Pour jouer, vous avez besoin d'une clé API Anthropic.
 
@@ -35,42 +28,51 @@ Elle ne passe par aucun serveur — les conversations avec les personnages se fo
 
 Coût estimé : quelques cents par session.`
 
-// ─── Reset ────────────────────────────────────────────────────────────────────
+// ─── Reset — n'efface PAS la clé API ─────────────────────────────────────────
 
 function resetAllProgress(): void {
   const keys: string[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i)
-    if (k && k.startsWith('recit_')) keys.push(k)
+    if (k && k.startsWith('recit_') && k !== API_KEY_STORAGE_KEY) keys.push(k)
   }
   keys.forEach(k => localStorage.removeItem(k))
+}
+
+function loadProgress(): ReaderProgress {
+  try {
+    const saved = localStorage.getItem(storageKeys.progress())
+    return saved
+      ? JSON.parse(saved)
+      : { discoveredClues: [], completedParts: [], isStoryComplete: false }
+  } catch {
+    return { discoveredClues: [], completedParts: [], isStoryComplete: false }
+  }
+}
+
+function saveProgress(p: ReaderProgress) {
+  localStorage.setItem(storageKeys.progress(), JSON.stringify(p))
 }
 
 export default function Home() {
   const router = useRouter()
 
-  const [apiKey,         setApiKey]         = useState('')
-  const [apiKeyInput,    setApiKeyInput]     = useState('')
-  const [showApiModal,   setShowApiModal]    = useState(false)
-  const [showHelpModal,  setShowHelpModal]   = useState(false)
-  const [showResetModal, setShowResetModal]  = useState(false)
-  const [apiKeySaved,    setApiKeySaved]     = useState(false)
-  const [encounterCounts, setEncounterCounts] = useState<Record<string, Record<string, number>>>({})
+  const [apiKey,          setApiKey]          = useState('')
+  const [apiKeyInput,     setApiKeyInput]      = useState('')
+  const [showApiModal,    setShowApiModal]     = useState(false)
+  const [showHelpModal,   setShowHelpModal]    = useState(false)
+  const [showResetModal,  setShowResetModal]   = useState(false)
+  const [apiKeySaved,     setApiKeySaved]      = useState(false)
+  const [resetDone,       setResetDone]        = useState(false)
+  const [progress,        setProgress]         = useState<ReaderProgress>({
+    discoveredClues: [], completedParts: [], isStoryComplete: false,
+  })
 
   useEffect(() => {
     const saved = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ''
     setApiKey(saved)
     setApiKeyInput(saved)
-
-    const counts: Record<string, Record<string, number>> = {}
-    locations.forEach(loc => {
-      counts[loc.id] = {}
-      loc.characters.forEach(c => {
-        const n = localStorage.getItem(storageKeys.encounters(c.id))
-        counts[loc.id][c.id] = n ? parseInt(n) : 0
-      })
-    })
-    setEncounterCounts(counts)
+    setProgress(loadProgress())
   }, [])
 
   function saveApiKey() {
@@ -79,10 +81,7 @@ export default function Home() {
     localStorage.setItem(API_KEY_STORAGE_KEY, trimmed)
     setApiKey(trimmed)
     setApiKeySaved(true)
-    setTimeout(() => {
-      setApiKeySaved(false)
-      setShowApiModal(false)
-    }, 1000)
+    setTimeout(() => { setApiKeySaved(false); setShowApiModal(false) }, 1000)
   }
 
   function removeApiKey() {
@@ -95,17 +94,37 @@ export default function Home() {
   function confirmReset() {
     resetAllProgress()
     setShowResetModal(false)
-    const counts: Record<string, Record<string, number>> = {}
-    locations.forEach(loc => {
-      counts[loc.id] = {}
-      loc.characters.forEach(c => { counts[loc.id][c.id] = 0 })
-    })
-    setEncounterCounts(counts)
+    setResetDone(true)
+    setProgress({ discoveredClues: [], completedParts: [], isStoryComplete: false })
+    setTimeout(() => setResetDone(false), 2500)
+  }
+
+  function markLocationSeen(locationId: string) {
+    const updated: ReaderProgress = {
+      ...progress,
+      newlyUnlockedLocations: (progress.newlyUnlockedLocations ?? []).filter(id => id !== locationId),
+    }
+    setProgress(updated)
+    saveProgress(updated)
+  }
+
+  // ── Logique de verrouillage ────────────────────────────────────────────────
+
+  function isLocationUnlocked(loc: typeof locations[0]): boolean {
+    return !loc.unlockedByPart || progress.completedParts.includes(loc.unlockedByPart)
+  }
+
+  // Nombre d'indices encore manquants pour débloquer ce lieu
+  function missingClueCount(loc: typeof locations[0]): number {
+    if (!loc.unlockedByPart) return 0
+    const part = story.heart.parts.find(p => p.id === loc.unlockedByPart)
+    if (!part) return 0
+    return part.requiredClues.filter(id => !progress.discoveredClues.includes(id)).length
   }
 
   const hasKey = apiKey.length > 0
 
-  // ── Styles partagés ────────────────────────────────────────────────────────
+  // Styles partagés
   const modalOverlay: React.CSSProperties = {
     position: 'fixed', inset: 0,
     background: 'rgba(26,24,20,0.6)',
@@ -113,12 +132,9 @@ export default function Home() {
     zIndex: 300, padding: '2rem',
   }
   const modalBox: React.CSSProperties = {
-    background: '#f7f4ef',
-    border: '1px solid #d4cfc6',
-    borderRadius: '3px',
-    padding: '2rem',
-    maxWidth: '400px',
-    width: '100%',
+    background: '#f7f4ef', border: '1px solid #d4cfc6',
+    borderRadius: '3px', padding: '2rem',
+    maxWidth: '400px', width: '100%',
   }
   const btnSecondary: React.CSSProperties = {
     fontFamily: "'Raleway', sans-serif",
@@ -156,14 +172,10 @@ export default function Home() {
               <span style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(18px, 2vw, 22px)', fontWeight: 300, color: '#1a1814' }}>
                 Clé API Anthropic
               </span>
-              <button
-                onClick={() => { setShowApiModal(false); setShowHelpModal(true) }}
-                style={{ ...btnSecondary, fontSize: '12px', padding: '3px 9px' }}
-              >
+              <button onClick={() => { setShowApiModal(false); setShowHelpModal(true) }} style={{ ...btnSecondary, fontSize: '12px', padding: '3px 9px' }}>
                 ? aide
               </button>
             </div>
-
             <input
               type="password"
               value={apiKeyInput}
@@ -173,20 +185,13 @@ export default function Home() {
               autoFocus
               style={{
                 width: '100%', boxSizing: 'border-box',
-                fontFamily: "'Raleway', sans-serif", fontSize: '14px',
-                fontWeight: 300, color: '#1a1814',
-                background: '#ede9e2', border: '1px solid #d4cfc6',
-                borderRadius: '2px', padding: '0.65rem 0.85rem',
-                outline: 'none', marginBottom: '1rem',
+                fontFamily: "'Raleway', sans-serif", fontSize: '14px', fontWeight: 300, color: '#1a1814',
+                background: '#ede9e2', border: '1px solid #d4cfc6', borderRadius: '2px',
+                padding: '0.65rem 0.85rem', outline: 'none', marginBottom: '1rem',
               }}
             />
-
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              {hasKey && (
-                <button onClick={removeApiKey} style={btnSecondary}>
-                  Retirer
-                </button>
-              )}
+              {hasKey && <button onClick={removeApiKey} style={btnSecondary}>Retirer</button>}
               <button
                 onClick={saveApiKey}
                 disabled={!apiKeyInput.trim()}
@@ -234,12 +239,12 @@ export default function Home() {
             <p style={{
               fontFamily: "'Cormorant Garamond', Georgia, serif",
               fontSize: 'clamp(16px, 1.8vw, 19px)', fontWeight: 300,
-              fontStyle: 'italic', color: '#1a1814',
-              lineHeight: 1.65, marginBottom: '1.75rem',
+              fontStyle: 'italic', color: '#1a1814', lineHeight: 1.65, marginBottom: '1.75rem',
             }}>
               Effacer toute la progression ?<br />
               <span style={{ fontSize: '0.85em', color: '#8a8680', fontStyle: 'normal' }}>
                 Rencontres, indices, niveaux de confiance — tout repart à zéro.
+                Votre clé API n'est pas effacée.
               </span>
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -257,8 +262,7 @@ export default function Home() {
           fontFamily: "'Cormorant Garamond', Georgia, serif",
           fontSize: 'clamp(36px, 6vw, 58px)',
           fontWeight: 300, letterSpacing: '-0.02em',
-          lineHeight: 1.08, color: '#1a1814',
-          marginBottom: '3rem',
+          lineHeight: 1.08, color: '#1a1814', marginBottom: '3rem',
         }}>
           {TITRE}
         </h1>
@@ -276,52 +280,127 @@ export default function Home() {
           </p>
         )}
 
-        {/* Lieux */}
+        {/* Tous les lieux — débloqués et verrouillés */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '2.5rem' }}>
-          {locations.map(location => (
-            <button
-              key={location.id}
-              onClick={() => hasKey && router.push(`/lieu/${location.id}`)}
-              disabled={!hasKey}
-              style={{
-                background: '#ede9e2', border: '1px solid #d4cfc6',
-                borderRadius: '3px', padding: '1rem 1.25rem',
-                cursor: hasKey ? 'pointer' : 'not-allowed',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                transition: 'border-color 0.2s, background 0.2s',
-                textAlign: 'left', opacity: hasKey ? 1 : 0.4,
-              }}
-              onMouseEnter={e => {
-                if (!hasKey) return
-                const el = e.currentTarget as HTMLButtonElement
-                el.style.borderColor = '#c4a882'
-                el.style.background  = '#f0ece4'
-              }}
-              onMouseLeave={e => {
-                const el = e.currentTarget as HTMLButtonElement
-                el.style.borderColor = '#d4cfc6'
-                el.style.background  = '#ede9e2'
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <span style={{
-                  fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 'clamp(18px, 2.1vw, 22px)', fontWeight: 400,
-                  color: '#1a1814', display: 'block', marginBottom: '2px',
-                }}>
-                  {location.name}
-                </span>
-                <span style={{
-                  fontFamily: "'Raleway', sans-serif",
-                  fontSize: 'clamp(12px, 1.3vw, 13px)', fontWeight: 300,
-                  letterSpacing: '0.08em', color: '#8a8680', textTransform: 'uppercase',
-                }}>
-                  {location.era}
-                </span>
-              </div>
-              <span style={{ fontSize: '16px', color: '#c4a882', marginLeft: '1rem' }}>→</span>
-            </button>
-          ))}
+          {locations.map(location => {
+            const unlocked = isLocationUnlocked(location)
+            const isNew    = unlocked && (progress.newlyUnlockedLocations ?? []).includes(location.id)
+            const missing  = !unlocked ? missingClueCount(location) : 0
+
+            if (!unlocked) {
+              // ── Lieu verrouillé ──────────────────────────────────────
+              const missingLabel = missing === 1
+                ? '1 indice manquant'
+                : `${missing} indices manquants`
+
+              return (
+                <div
+                  key={location.id}
+                  style={{
+                    background: '#ede9e2',
+                    border: '1px solid #d4cfc6',
+                    borderRadius: '3px',
+                    padding: '1rem 1.25rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    opacity: 0.38,
+                    cursor: 'not-allowed',
+                  }}
+                >
+                  <div style={{ flex: 1, textAlign: 'left' }}>
+                    <span style={{
+                      fontFamily: "'Cormorant Garamond', Georgia, serif",
+                      fontSize: 'clamp(18px, 2.1vw, 22px)', fontWeight: 400,
+                      color: '#1a1814', display: 'block', marginBottom: '2px',
+                    }}>
+                      {location.name}
+                    </span>
+                    <span style={{
+                      fontFamily: "'Raleway', sans-serif",
+                      fontSize: 'clamp(12px, 1.3vw, 13px)', fontWeight: 300,
+                      letterSpacing: '0.08em', color: '#8a8680', textTransform: 'uppercase',
+                    }}>
+                      {location.era.split(' — ')[0]}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontFamily: "'Raleway', sans-serif",
+                    fontSize: 'clamp(11px, 1.2vw, 12px)', fontWeight: 400,
+                    letterSpacing: '0.1em', textTransform: 'uppercase',
+                    color: '#8a8680', whiteSpace: 'nowrap', marginLeft: '1rem',
+                  }}>
+                    {missingLabel}
+                  </span>
+                </div>
+              )
+            }
+
+            // ── Lieu débloqué ────────────────────────────────────────
+            return (
+              <button
+                key={location.id}
+                onClick={() => {
+                  if (!hasKey) return
+                  if (isNew) markLocationSeen(location.id)
+                  router.push(`/lieu/${location.id}`)
+                }}
+                disabled={!hasKey}
+                style={{
+                  background: '#ede9e2',
+                  border: `1px solid ${isNew ? '#c4a882' : '#d4cfc6'}`,
+                  borderRadius: '3px',
+                  padding: '1rem 1.25rem',
+                  cursor: hasKey ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  transition: 'border-color 0.2s, background 0.2s',
+                  textAlign: 'left',
+                  opacity: hasKey ? 1 : 0.4,
+                }}
+                onMouseEnter={e => {
+                  if (!hasKey) return
+                  const el = e.currentTarget as HTMLButtonElement
+                  el.style.borderColor = '#c4a882'
+                  el.style.background  = '#f0ece4'
+                }}
+                onMouseLeave={e => {
+                  const el = e.currentTarget as HTMLButtonElement
+                  el.style.borderColor = isNew ? '#c4a882' : '#d4cfc6'
+                  el.style.background  = '#ede9e2'
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '2px' }}>
+                    <span style={{
+                      fontFamily: "'Cormorant Garamond', Georgia, serif",
+                      fontSize: 'clamp(18px, 2.1vw, 22px)', fontWeight: 400, color: '#1a1814',
+                    }}>
+                      {location.name}
+                    </span>
+                    {isNew && (
+                      <span style={{
+                        fontFamily: "'Raleway', sans-serif",
+                        fontSize: '10px', fontWeight: 500,
+                        letterSpacing: '0.18em', textTransform: 'uppercase',
+                        color: '#8b6f47', background: '#f0e8d8',
+                        padding: '2px 7px', borderRadius: '2px',
+                      }}>
+                        nouveau
+                      </span>
+                    )}
+                  </div>
+                  <span style={{
+                    fontFamily: "'Raleway', sans-serif",
+                    fontSize: 'clamp(12px, 1.3vw, 13px)', fontWeight: 300,
+                    letterSpacing: '0.08em', color: '#8a8680', textTransform: 'uppercase',
+                  }}>
+                    {location.era.split(' — ')[0]}
+                  </span>
+                </div>
+                <span style={{ fontSize: '16px', color: '#c4a882', marginLeft: '1rem' }}>→</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Barre d'actions */}
@@ -349,11 +428,12 @@ export default function Home() {
               fontFamily: "'Raleway', sans-serif",
               fontSize: 'clamp(11px, 1.2vw, 12px)', fontWeight: 400,
               letterSpacing: '0.15em', textTransform: 'uppercase',
-              color: '#8a8680', background: 'none',
-              border: 'none', cursor: 'pointer', padding: 0,
+              color: resetDone ? '#6b8c5a' : '#8a8680',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              transition: 'color 0.3s',
             }}
           >
-            recommencer
+            {resetDone ? '✓ progression effacée' : 'recommencer'}
           </button>
         </div>
 

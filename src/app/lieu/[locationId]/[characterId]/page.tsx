@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getCharacter } from '@/lib/locations'
 import { story, detectMentionedCharacters, computeNewlyUnlockedParts, checkStoryComplete } from '@/lib/story'
+import { getNewlyUnlockedLocations } from '@/lib/locations'
 import { Message, ReaderProgress, ChatRequest, API_KEY_STORAGE_KEY } from '@/lib/types'
 import { sendChatMessage, distillCoreMemory } from '@/lib/anthropic-client'
 import {
@@ -67,6 +68,14 @@ function isMobile(): boolean {
   return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
 }
 
+// ─── Notification indice ──────────────────────────────────────────────────────
+
+interface ClueNotification {
+  clueContent: string
+  unlockedParts: string[]   // titres des chapitres débloqués
+  isEpilogue: boolean
+}
+
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function ConversationPage() {
@@ -82,30 +91,31 @@ export default function ConversationPage() {
   const [isLoading,           setIsLoading]           = useState(false)
   const [completedEncounters, setCompletedEncounters] = useState(0)
   const [progress,            setProgress]            = useState<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
-  const [newClueFound,        setNewClueFound]        = useState<string | null>(null)
+  const [clueNotif,           setClueNotif]           = useState<ClueNotification | null>(null)
   const [sessionEnded,        setSessionEnded]        = useState(false)
+  const [lastTrustDelta,      setLastTrustDelta]      = useState(0)
   const [sessionMsgCount,     setSessionMsgCount]     = useState(0)
   const [diegeticTime,        setDiegeticTime]        = useState('')
   const [apiKey,              setApiKey]              = useState('')
   const [noApiKey,            setNoApiKey]            = useState(false)
 
-  const messagesEndRef         = useRef<HTMLDivElement>(null)
-  const textareaRef            = useRef<HTMLTextAreaElement>(null)
-  const hasInitialized         = useRef(false)
-  const hasSavedSession        = useRef(false)
-  const lastContextRef         = useRef('')
-  const messagesRef            = useRef<Message[]>([])
-  const trustRef               = useRef(10)
-  const progressRef            = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
-  const sessionMsgRef          = useRef(0)
-  const characterRef           = useRef(character)
-  const apiKeyRef              = useRef('')
+  const messagesEndRef  = useRef<HTMLDivElement>(null)
+  const textareaRef     = useRef<HTMLTextAreaElement>(null)
+  const hasInitialized  = useRef(false)
+  const hasSavedSession = useRef(false)
+  const lastContextRef  = useRef('')
+  const messagesRef     = useRef<Message[]>([])
+  const trustRef        = useRef(10)
+  const progressRef     = useRef<ReaderProgress>({ discoveredClues: [], completedParts: [], isStoryComplete: false })
+  const sessionMsgRef   = useRef(0)
+  const characterRef    = useRef(character)
+  const apiKeyRef       = useRef('')
 
-  useEffect(() => { messagesRef.current   = messages         }, [messages])
-  useEffect(() => { trustRef.current      = trust            }, [trust])
-  useEffect(() => { progressRef.current   = progress         }, [progress])
-  useEffect(() => { sessionMsgRef.current = sessionMsgCount  }, [sessionMsgCount])
-  useEffect(() => { apiKeyRef.current     = apiKey           }, [apiKey])
+  useEffect(() => { messagesRef.current   = messages        }, [messages])
+  useEffect(() => { trustRef.current      = trust           }, [trust])
+  useEffect(() => { progressRef.current   = progress        }, [progress])
+  useEffect(() => { sessionMsgRef.current = sessionMsgCount }, [sessionMsgCount])
+  useEffect(() => { apiKeyRef.current     = apiKey          }, [apiKey])
 
   // Horloge diégétique
   useEffect(() => {
@@ -132,7 +142,6 @@ export default function ConversationPage() {
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ''
     setApiKey(savedKey)
     apiKeyRef.current = savedKey
-
     if (!savedKey) { setNoApiKey(true); return }
 
     migrateStorageKeys(locationId, characterId)
@@ -186,7 +195,8 @@ export default function ConversationPage() {
             messagesRef.current = [opening]
             lastContextRef.current = ''
           }
-          if (data.trustDelta) {
+          // Trust delta sur l'ouverture aussi
+          if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
             const newTrust = Math.max(0, Math.min(100, currentTrust + data.trustDelta))
             setTrust(newTrust); trustRef.current = newTrust
             localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
@@ -228,13 +238,7 @@ export default function ConversationPage() {
   // Scroll auto
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  // Notification indice
-  useEffect(() => {
-    if (newClueFound) {
-      const t = setTimeout(() => setNewClueFound(null), 4500)
-      return () => clearTimeout(t)
-    }
-  }, [newClueFound])
+  // Pas d'auto-dismiss — la modale d'indice requiert une confirmation manuelle
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
@@ -308,9 +312,14 @@ export default function ConversationPage() {
         const finalMessages = [...updatedMessages, assistantMsg]
         setMessages(finalMessages)
 
-        if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
+        // ── Mise à jour du trust
+        // Pas de condition de guard — on écrit toujours dans localStorage
+        // pour garantir la synchronisation, même si le delta est 0.
+        if (typeof data.trustDelta === 'number') {
           const newTrust = Math.max(0, Math.min(100, trustRef.current + data.trustDelta))
-          setTrust(newTrust); trustRef.current = newTrust
+          setTrust(newTrust)
+          setLastTrustDelta(data.trustDelta)
+          trustRef.current = newTrust
           localStorage.setItem(storageKeys.trust(characterId), newTrust.toString())
         }
 
@@ -322,7 +331,6 @@ export default function ConversationPage() {
         }
       }
     } catch (err: unknown) {
-      // Clé invalide — renvoyer à l'accueil
       if (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 401) {
         router.push('/')
         return
@@ -341,20 +349,36 @@ export default function ConversationPage() {
     const updatedDiscovered  = [...current.discoveredClues, ...newClues]
     const newlyUnlocked      = computeNewlyUnlockedParts(current.completedParts, updatedDiscovered)
     const storyJustCompleted = checkStoryComplete(newlyUnlocked)
+    const newlyUnlockedLocs  = getNewlyUnlockedLocations(newlyUnlocked)
+
+    // Fusionner avec les lieux déjà marqués "nouveau" mais pas encore vus
+    const existingNew = current.newlyUnlockedLocations ?? []
+    const mergedNewLocs = [...new Set([...existingNew, ...newlyUnlockedLocs])]
 
     const newProgress: ReaderProgress = {
       discoveredClues: updatedDiscovered,
       completedParts:  [...current.completedParts, ...newlyUnlocked],
       isStoryComplete: current.isStoryComplete || storyJustCompleted,
       completedAt:     storyJustCompleted ? Date.now() : current.completedAt,
+      newlyUnlockedLocations: mergedNewLocs,
     }
 
     setProgress(newProgress)
     progressRef.current = newProgress
     saveProgress(newProgress)
 
+    // Construire la notification
     const firstClue = story.clues.find(c => c.id === newClues[0])
-    setNewClueFound(firstClue?.content ?? 'Un indice a été révélé.')
+    const unlockedTitles = newlyUnlocked
+      .map(id => story.heart.parts.find(p => p.id === id)?.title)
+      .filter(Boolean) as string[]
+
+    setClueNotif({
+      clueContent: firstClue?.content ?? 'Un indice a été révélé.',
+      unlockedParts: unlockedTitles,
+      isEpilogue: storyJustCompleted,
+    })
+
     if (storyJustCompleted) setSessionEnded(true)
   }
 
@@ -395,14 +419,120 @@ export default function ConversationPage() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f7f4ef', fontFamily: "'Raleway', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500&display=swap" rel="stylesheet" />
 
-      {/* Notification indice */}
-      {newClueFound && (
-        <div style={{ position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)', background: '#1a1814', color: '#f7f4ef', fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(14px, 1.6vw, 16px)', fontStyle: 'italic', padding: '0.75rem 1.5rem', borderRadius: '2px', zIndex: 100, maxWidth: '90vw', textAlign: 'center' }}>
-          {newClueFound}
+      {/* ── Modale indice trouvé — bloque jusqu'à confirmation ─────────── */}
+      {clueNotif && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(26,24,20,0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 150,
+          padding: '2rem',
+        }}>
+          <div style={{
+            background: '#1a1814',
+            color: '#f7f4ef',
+            borderRadius: '3px',
+            maxWidth: '480px',
+            width: '100%',
+            overflow: 'hidden',
+          }}>
+
+            {/* En-tête */}
+            <div style={{
+              padding: '1.5rem 2rem 1rem',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <span style={{
+                fontFamily: "'Raleway', sans-serif",
+                fontSize: '11px',
+                fontWeight: 500,
+                letterSpacing: '0.25em',
+                textTransform: 'uppercase',
+                color: '#c4a882',
+              }}>
+                Indice découvert
+              </span>
+            </div>
+
+            {/* Contenu de l'indice */}
+            <div style={{ padding: '1.5rem 2rem' }}>
+              <p style={{
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontSize: 'clamp(18px, 2.2vw, 22px)',
+                fontWeight: 300,
+                fontStyle: 'italic',
+                lineHeight: 1.65,
+                color: '#f7f4ef',
+                margin: 0,
+              }}>
+                {clueNotif.clueContent}
+              </p>
+            </div>
+
+            {/* Chapitres débloqués */}
+            {clueNotif.unlockedParts.length > 0 && (
+              <div style={{
+                padding: '1rem 2rem',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+              }}>
+                <span style={{
+                  fontFamily: "'Raleway', sans-serif",
+                  fontSize: '10px',
+                  fontWeight: 500,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#6b8c5a',
+                  flexShrink: 0,
+                }}>
+                  Nouveau lieu débloqué
+                </span>
+                <span style={{
+                  fontFamily: "'Cormorant Garamond', Georgia, serif",
+                  fontSize: 'clamp(14px, 1.6vw, 16px)',
+                  fontStyle: 'italic',
+                  color: '#c8e0b8',
+                }}>
+                  {clueNotif.unlockedParts.join(' · ')}
+                </span>
+              </div>
+            )}
+
+            {/* Bouton confirmation */}
+            <div style={{
+              padding: '1rem 2rem 1.5rem',
+              display: 'flex',
+              justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => setClueNotif(null)}
+                style={{
+                  fontFamily: "'Raleway', sans-serif",
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#c4a882',
+                  background: 'none',
+                  border: '1px solid rgba(196,168,130,0.4)',
+                  borderRadius: '2px',
+                  padding: '0.6rem 1.5rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Continuer
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Épilogue */}
+      {/* ── Épilogue ────────────────────────────────────────────────────── */}
       {isComplete && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,24,20,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
           <div style={{ background: '#f7f4ef', padding: '3rem', borderRadius: '3px', maxWidth: '420px', textAlign: 'center' }}>
@@ -416,7 +546,7 @@ export default function ConversationPage() {
         </div>
       )}
 
-      {/* Header */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 2rem', borderBottom: '1px solid #d4cfc6', background: '#f7f4ef', position: 'sticky', top: 0, zIndex: 10 }}>
         <button onClick={saveAndLeave} style={{ fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(13px, 1.4vw, 14px)', fontWeight: 400, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#8a8680', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           ← quitter
@@ -429,7 +559,7 @@ export default function ConversationPage() {
         </span>
       </div>
 
-      {/* Messages */}
+      {/* ── Messages ────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '3rem 2rem', maxWidth: '680px', width: '100%', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', margin: '0 0 2rem', position: 'relative' }}>
           <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '1px', background: '#d4cfc6' }} />
@@ -458,10 +588,10 @@ export default function ConversationPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Footer */}
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
       <div style={{ borderTop: '1px solid #d4cfc6', padding: '1.25rem 2rem', background: '#f7f4ef' }}>
         <div style={{ maxWidth: '680px', margin: '0 auto' }}>
-          <TrustBar value={trust} characterName={character.name} />
+          <TrustBar value={trust} characterName={character.name} lastDelta={lastTrustDelta} />
 
           {sessionEnded && !isComplete ? (
             <p style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 'clamp(15px, 1.7vw, 17px)', fontStyle: 'italic', color: '#8a8680', textAlign: 'center', padding: '0.75rem 0' }}>

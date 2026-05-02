@@ -5,7 +5,7 @@ export interface Message {
 }
 
 export interface Schedule {
-  openHour: number   // heure diégétique (0–23)
+  openHour: number
   closeHour: number
   closedMessage?: string
 }
@@ -18,6 +18,7 @@ export interface Character {
   intro: string
   systemPrompt: string
   trustEvaluation: string
+  trustProfile: string
   pronoun?: 'elle' | 'il'
   locationContext?: Record<string, string>
   schedule?: Schedule
@@ -32,6 +33,8 @@ export interface Location {
   era: string
   characters: Character[]
   schedule?: Schedule
+  // Si présent, le lieu n'est visible qu'une fois ce partId dans completedParts
+  unlockedByPart?: string
 }
 
 export interface ReaderProgress {
@@ -39,6 +42,8 @@ export interface ReaderProgress {
   completedParts: string[]
   isStoryComplete: boolean
   completedAt?: number
+  // Lieux vus pour la première fois après déverrouillage — badge "nouveau"
+  newlyUnlockedLocations?: string[]
 }
 
 export interface CoreMemory {
@@ -48,7 +53,6 @@ export interface CoreMemory {
   sessionCount: number
 }
 
-// ChatRequest — utilisé en interne par anthropic-client.ts (pas de backend)
 export interface ChatRequest {
   locationId: string
   characterId: string
@@ -71,5 +75,4 @@ export interface ChatResponse {
   driftDetected?: string | null
 }
 
-// Clé stockée dans localStorage — jamais envoyée à un serveur
 export const API_KEY_STORAGE_KEY = 'recit_api_key'
