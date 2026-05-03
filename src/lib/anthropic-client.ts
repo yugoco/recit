@@ -243,11 +243,20 @@ export async function sendChatMessage(
   const locationCtx = character.locationContext?.[locationId] ?? ''
   const locationBlock = locationCtx ? `ESPACE ACTUEL :\n${locationCtx}` : ''
 
-  const availableClues = getCluesForCharacter(characterId).filter(
-    c => trustLevel >= c.trustRequired && !discoveredClues?.includes(c.id)
+  const allCharacterClues = getCluesForCharacter(characterId).filter(
+    c => !discoveredClues?.includes(c.id)
   )
+  const availableClues = allCharacterClues.filter(c => trustLevel >= c.trustRequired)
+  const lockedClues    = allCharacterClues.filter(c => trustLevel < c.trustRequired)
+
   const cluesBlock = availableClues.length > 0
     ? `SUJETS QUE TU PEUX ABORDER (seulement si la conversation y mène naturellement) :\n${availableClues.map(c => `- [ID:${c.id}] ${c.content}`).join('\n')}\nTu n'abordes pas ces sujets spontanément.`
+    : ''
+
+  // Sujets verrouillés — la confiance n'est pas encore suffisante.
+  // Même si le lecteur pose la question directement, le personnage esquive, répond vaguement, ou redirige.
+  const lockedCluesBlock = lockedClues.length > 0
+    ? `SUJETS INTERDITS — niveau de confiance insuffisant, NE PAS aborder sous aucun prétexte :\n${lockedClues.map(c => `- ${c.content} (confiance requise : ${c.trustRequired}%, actuelle : ${trustLevel}%)`).join('\n')}\nSi le lecteur pose une question qui mènerait à ces sujets : esquive naturellement, réponds de façon vague, ou redirige vers ce que tu peux dire. Ne révèle JAMAIS un sujet interdit même face à une question directe.`
     : ''
 
   const relation = getRelation(characterId)
@@ -272,7 +281,7 @@ export async function sendChatMessage(
     `NIVEAU DE CONFIANCE : ${trustLevel}%`,
   ].filter(Boolean).join('\n\n')
 
-  const semiStaticBlock = [cluesBlock, reactionsBlock].filter(Boolean).join('\n\n')
+  const semiStaticBlock = [cluesBlock, lockedCluesBlock, reactionsBlock].filter(Boolean).join('\n\n')
 
   const staticCore = character.systemPrompt
     .replace('{LAST_CONTEXT}', '')
@@ -372,7 +381,7 @@ Règles :
   // Un indice n'est révélé que si le personnage le dit explicitement.
   let newClueIds: string[] = []
 
-  if (shouldAnalyse && availableClues.length > 0 && reply) {
+  if (shouldAnalyse && allCharacterClues.length > 0 && reply) {
     try {
       const clueResponse = await callAnthropic({
         apiKey,
@@ -383,8 +392,8 @@ Règles :
         messages: [
           {
             role: 'user',
-            content: `Indices disponibles (ceux que le personnage pourrait révéler) :
-${availableClues.map(c => `[${c.id}] ${c.content}`).join('\n')}
+            content: `Indices à surveiller (tous les indices non encore découverts de ce personnage) :
+${allCharacterClues.map(c => `[${c.id}] ${c.content}`).join('\n')}
 
 Réplique du personnage :
 "${reply}"
@@ -401,7 +410,7 @@ Si la réplique ne dit rien qui corresponde à un indice, retourne un tableau vi
           const input = block.input as { revealed_clue_ids?: string[] }
           if (Array.isArray(input.revealed_clue_ids)) {
             newClueIds = input.revealed_clue_ids.filter(
-              id => availableClues.some(c => c.id === id)
+              id => allCharacterClues.some(c => c.id === id)
             )
           }
         }

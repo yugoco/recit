@@ -115,14 +115,13 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
         requiredClues: [],
       },
       {
-        // Débloqué quand Martine révèle les deux indices du canal :
-        // — elle cherche le livre de recettes (clue-martine-1)
-        // — Carole est souvent au Café Monk (clue-martine-2)
+        // Débloqué quand Martine révèle l'indice difficile :
+        // — Carole est souvent au Café Monk (clue-martine-5)
         // → débloque le lieu : Café Monk
         id: 'part-2',
         title: 'Le Café Monk',
         unlockedByDefault: false,
-        requiredClues: ['clue-martine-1', 'clue-martine-2'],
+        requiredClues: ['clue-martine-5'],
       },
       {
         // Débloqué quand Carole révèle un indice sur le quartier (Verdun, le barbier)
@@ -149,25 +148,39 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
 
     narrativeNodes: [
       {
-        id: 'node-livre-dehors',
+        id: 'node-livre-recettes',
         type: 'pivotDetail',
-        description: 'Martine mentionne que le livre était conservé "en dehors de la maison". Un cahier de cuisine ne se garde pas hors de chez soi.',
+        description: 'Martine cherche activement le livre de recettes de Fernand — elle en parle dès le premier échange.',
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-1'],
       },
       {
-        id: 'node-cafe-carole',
-        type: 'keyQuestion',
-        description: 'Martine mentionne le Vieux-Comptoir où va Carole, mais dit qu\'elle n\'y va plus sans savoir pourquoi. L\'hostilité de Carole est là, floue.',
-        involvedCharacters: ['martine', 'carole'],
+        id: 'node-delegue-syndical',
+        type: 'pivotDetail',
+        description: 'Fernand était délégué syndical — un détail qui donne au "livre de recettes" une tout autre portée possible.',
+        involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-2'],
       },
       {
-        id: 'node-phrase-fernand',
+        id: 'node-mort-fernand',
         type: 'keyQuestion',
-        description: '"Ce livre-là, tu le donnes à personne." — la phrase que Fernand a dite à Martine. Première preuve que le carnet n\'est pas anodin.',
+        description: 'Fernand est mort hier. Martine le sait dans un coin de sa tête, mais sa démence douce brouille la chronologie.',
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-3'],
+      },
+      {
+        id: 'node-fille-carole',
+        type: 'keyQuestion',
+        description: "Martine a une fille, Carole. Elle \"a ses affaires\" — une distance floue que Martine ne comprend plus vraiment.",
+        involvedCharacters: ['martine', 'carole'],
+        unlockedByClues: ['clue-martine-4'],
+      },
+      {
+        id: 'node-cafe-carole',
+        type: 'keyQuestion',
+        description: "Carole fréquente le Café Monk, rue Monk à Ville-Émard. Martine le sait mais n'y va plus.",
+        involvedCharacters: ['martine', 'carole'],
+        unlockedByClues: ['clue-martine-5'],
       },
     ],
 

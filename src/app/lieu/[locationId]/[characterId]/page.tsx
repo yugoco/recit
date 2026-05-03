@@ -283,6 +283,7 @@ export default function ConversationPage() {
     setMessages(updatedMessages)
     setInput('')
     setIsLoading(true)
+    setLastTrustDelta(0)  // reset avant chaque envoi pour garantir le re-déclenchement de l'effet
     setSessionMsgCount(c => c + 1)
     sessionMsgRef.current += 1
 
