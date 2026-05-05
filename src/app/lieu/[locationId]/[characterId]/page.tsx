@@ -21,6 +21,7 @@ import {
 } from '@/lib/time'
 import MessageBubble from '@/components/MessageBubble'
 import TrustBar from '@/components/TrustBar'
+import { CluesPanel, CluesButton } from '@/components/CluesPanel'
 
 // ─── Helpers localStorage ─────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ function isMobile(): boolean {
 
 interface ClueNotification {
   clueContent: string
-  unlockedParts: string[]   // titres des chapitres débloqués
+  unlockedParts: string[]
   isEpilogue: boolean
 }
 
@@ -98,6 +99,7 @@ export default function ConversationPage() {
   const [diegeticTime,        setDiegeticTime]        = useState('')
   const [apiKey,              setApiKey]              = useState('')
   const [noApiKey,            setNoApiKey]            = useState(false)
+  const [showCluesPanel,      setShowCluesPanel]      = useState(false)
 
   const messagesEndRef  = useRef<HTMLDivElement>(null)
   const textareaRef     = useRef<HTMLTextAreaElement>(null)
@@ -195,7 +197,6 @@ export default function ConversationPage() {
             messagesRef.current = [opening]
             lastContextRef.current = ''
           }
-          // Trust delta sur l'ouverture aussi
           if (typeof data.trustDelta === 'number' && data.trustDelta !== 0) {
             const newTrust = Math.max(0, Math.min(100, currentTrust + data.trustDelta))
             setTrust(newTrust); trustRef.current = newTrust
@@ -237,8 +238,6 @@ export default function ConversationPage() {
 
   // Scroll auto
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
-
-  // Pas d'auto-dismiss — la modale d'indice requiert une confirmation manuelle
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
@@ -283,7 +282,7 @@ export default function ConversationPage() {
     setMessages(updatedMessages)
     setInput('')
     setIsLoading(true)
-    setLastTrustDelta(0)  // reset avant chaque envoi pour garantir le re-déclenchement de l'effet
+    setLastTrustDelta(0)
     setSessionMsgCount(c => c + 1)
     sessionMsgRef.current += 1
 
@@ -313,9 +312,6 @@ export default function ConversationPage() {
         const finalMessages = [...updatedMessages, assistantMsg]
         setMessages(finalMessages)
 
-        // ── Mise à jour du trust
-        // Pas de condition de guard — on écrit toujours dans localStorage
-        // pour garantir la synchronisation, même si le delta est 0.
         if (typeof data.trustDelta === 'number') {
           const newTrust = Math.max(0, Math.min(100, trustRef.current + data.trustDelta))
           setTrust(newTrust)
@@ -352,8 +348,7 @@ export default function ConversationPage() {
     const storyJustCompleted = checkStoryComplete(newlyUnlocked)
     const newlyUnlockedLocs  = getNewlyUnlockedLocations(newlyUnlocked)
 
-    // Fusionner avec les lieux déjà marqués "nouveau" mais pas encore vus
-    const existingNew = current.newlyUnlockedLocations ?? []
+    const existingNew  = current.newlyUnlockedLocations ?? []
     const mergedNewLocs = [...new Set([...existingNew, ...newlyUnlockedLocs])]
 
     const newProgress: ReaderProgress = {
@@ -368,7 +363,6 @@ export default function ConversationPage() {
     progressRef.current = newProgress
     saveProgress(newProgress)
 
-    // Construire la notification
     const firstClue = story.clues.find(c => c.id === newClues[0])
     const unlockedTitles = newlyUnlocked
       .map(id => story.heart.parts.find(p => p.id === id)?.title)
@@ -420,110 +414,69 @@ export default function ConversationPage() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f7f4ef', fontFamily: "'Raleway', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Raleway:wght@300;400;500&display=swap" rel="stylesheet" />
 
+      {/* ── Panneau indices ─────────────────────────────────────────────── */}
+      <CluesPanel
+        open={showCluesPanel}
+        onClose={() => setShowCluesPanel(false)}
+        discoveredClueIds={progress.discoveredClues}
+      />
+
       {/* ── Modale indice trouvé — bloque jusqu'à confirmation ─────────── */}
       {clueNotif && (
         <div style={{
-          position: 'fixed',
-          inset: 0,
+          position: 'fixed', inset: 0,
           background: 'rgba(26,24,20,0.75)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 150,
-          padding: '2rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 150, padding: '2rem',
         }}>
           <div style={{
-            background: '#1a1814',
-            color: '#f7f4ef',
-            borderRadius: '3px',
-            maxWidth: '480px',
-            width: '100%',
-            overflow: 'hidden',
+            background: '#1a1814', color: '#f7f4ef',
+            borderRadius: '3px', maxWidth: '480px', width: '100%', overflow: 'hidden',
           }}>
-
-            {/* En-tête */}
-            <div style={{
-              padding: '1.5rem 2rem 1rem',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-            }}>
+            <div style={{ padding: '1.5rem 2rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
               <span style={{
-                fontFamily: "'Raleway', sans-serif",
-                fontSize: '11px',
-                fontWeight: 500,
-                letterSpacing: '0.25em',
-                textTransform: 'uppercase',
-                color: '#c4a882',
+                fontFamily: "'Raleway', sans-serif", fontSize: '11px', fontWeight: 500,
+                letterSpacing: '0.25em', textTransform: 'uppercase', color: '#c4a882',
               }}>
                 Indice découvert
               </span>
             </div>
-
-            {/* Contenu de l'indice */}
             <div style={{ padding: '1.5rem 2rem' }}>
               <p style={{
                 fontFamily: "'Cormorant Garamond', Georgia, serif",
-                fontSize: 'clamp(18px, 2.2vw, 22px)',
-                fontWeight: 300,
-                fontStyle: 'italic',
-                lineHeight: 1.65,
-                color: '#f7f4ef',
-                margin: 0,
+                fontSize: 'clamp(18px, 2.2vw, 22px)', fontWeight: 300,
+                fontStyle: 'italic', lineHeight: 1.65, color: '#f7f4ef', margin: 0,
               }}>
                 {clueNotif.clueContent}
               </p>
             </div>
-
-            {/* Chapitres débloqués */}
             {clueNotif.unlockedParts.length > 0 && (
               <div style={{
-                padding: '1rem 2rem',
-                borderTop: '1px solid rgba(255,255,255,0.08)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
+                padding: '1rem 2rem', borderTop: '1px solid rgba(255,255,255,0.08)',
+                display: 'flex', alignItems: 'center', gap: '0.75rem',
               }}>
                 <span style={{
-                  fontFamily: "'Raleway', sans-serif",
-                  fontSize: '10px',
-                  fontWeight: 500,
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  color: '#6b8c5a',
-                  flexShrink: 0,
+                  fontFamily: "'Raleway', sans-serif", fontSize: '10px', fontWeight: 500,
+                  letterSpacing: '0.2em', textTransform: 'uppercase', color: '#6b8c5a', flexShrink: 0,
                 }}>
                   Nouveau lieu débloqué
                 </span>
                 <span style={{
                   fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 'clamp(14px, 1.6vw, 16px)',
-                  fontStyle: 'italic',
-                  color: '#c8e0b8',
+                  fontSize: 'clamp(14px, 1.6vw, 16px)', fontStyle: 'italic', color: '#c8e0b8',
                 }}>
                   {clueNotif.unlockedParts.join(' · ')}
                 </span>
               </div>
             )}
-
-            {/* Bouton confirmation */}
-            <div style={{
-              padding: '1rem 2rem 1.5rem',
-              display: 'flex',
-              justifyContent: 'flex-end',
-            }}>
+            <div style={{ padding: '1rem 2rem 1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setClueNotif(null)}
                 style={{
-                  fontFamily: "'Raleway', sans-serif",
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  color: '#c4a882',
-                  background: 'none',
-                  border: '1px solid rgba(196,168,130,0.4)',
-                  borderRadius: '2px',
-                  padding: '0.6rem 1.5rem',
-                  cursor: 'pointer',
+                  fontFamily: "'Raleway', sans-serif", fontSize: '13px', fontWeight: 500,
+                  letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4a882',
+                  background: 'none', border: '1px solid rgba(196,168,130,0.4)', borderRadius: '2px',
+                  padding: '0.6rem 1.5rem', cursor: 'pointer',
                 }}
               >
                 Continuer
@@ -617,6 +570,11 @@ export default function ConversationPage() {
               >
                 Envoyer
               </button>
+              <CluesButton
+                clueCount={progress.discoveredClues.length}
+                onClick={() => setShowCluesPanel(true)}
+                variant="icon"
+              />
             </div>
           )}
         </div>

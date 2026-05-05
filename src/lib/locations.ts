@@ -89,9 +89,9 @@ const martine = register({
       trustRequired: 5,
     },
     {
-      // Facile — Fernand était délégué syndical
+      // Facile — Fernand était un homme important du quartier
       id: 'clue-martine-2',
-      content: 'Fernand Beausoleil était délégué syndical dans les usines du Sud-Ouest.',
+      content: 'Fernand était un homme respecté du quartier, connu dans les usines du Sud-Ouest.',
       trustRequired: 15,
     },
     {

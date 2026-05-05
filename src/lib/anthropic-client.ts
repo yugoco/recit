@@ -401,8 +401,15 @@ RÉPLIQUE DU PERSONNAGE :
 "${reply}"
 
 RÈGLE STRICTE — un indice est révélé SEULEMENT si les deux conditions sont remplies :
-1. L'information SPÉCIFIQUE décrite dans l'indice est présente DANS LA RÉPLIQUE DU PERSONNAGE (pas une mention tangentielle, pas une inférence).
+1. L'information SPÉCIFIQUE décrite dans l'indice est présente MOT POUR MOT ou quasi-mot pour mot DANS LA RÉPLIQUE DU PERSONNAGE.
 2. C'est le personnage qui le dit — pas le lecteur.
+
+RÈGLE CRITIQUE — PAS D'INFÉRENCE DE CATÉGORIE :
+Une information générale ne révèle JAMAIS une information spécifique, même si l'une implique logiquement l'autre.
+"il travaillait dans les shops" ne révèle PAS "délégué syndical".
+"il est parti" ne révèle PAS "il est mort".
+"il avait un carnet" ne révèle PAS "cahier de notes syndicales".
+Le mot ou la formulation EXACTE de l'indice doit apparaître dans la réplique. Si ce n'est pas le cas : tableau vide.
 
 RÈGLE CRITIQUE — L'INFORMATION VIENT DU PERSONNAGE, PAS DE LA QUESTION :
 Si le lecteur pose une question qui contient déjà l'information ("Fernand est mort?", "Il est décédé?"), et que le personnage répond de façon vague, émotionnelle ou évasive SANS CONFIRMER EXPLICITEMENT — l'indice N'EST PAS révélé.
@@ -410,14 +417,16 @@ Un silence, un regard perdu, un changement de sujet, un "je sais pas trop" NE CO
 Le personnage doit dire l'information LUI-MÊME, avec ses propres mots.
 
 EXEMPLES DE CE QUI NE COMPTE PAS :
+- Le personnage dit "il travaillait dans les shops" → ne révèle PAS l'indice sur "délégué syndical" → NON.
 - Le lecteur dit "Fernand est mort?" et le personnage répond "je sais pas trop où il est" → NON.
 - Le lecteur dit "il est décédé?" et le personnage change de sujet → NON.
 - Une réponse émotionnelle (silence, larmes, regard perdu) sans mots explicites → NON.
 - Une formulation vague qui pourrait s'appliquer à l'indice mais ne le dit pas clairement → NON.
 
 EXEMPLES DE CE QUI COMPTE :
+- L'indice dit "délégué syndical" et le personnage dit "il était délégué syndical" → OUI.
 - Le personnage dit lui-même "Fernand est mort hier" ou "il est décédé" → OUI.
-- Le personnage confirme explicitement avec ses propres mots un fait précis → OUI.
+- Le personnage confirme explicitement avec ses propres mots un fait précis qui correspond mot pour mot à l'indice → OUI.
 
 En cas de doute : tableau vide. Mieux vaut manquer une révélation que d'en créer une fausse.`,
           },
