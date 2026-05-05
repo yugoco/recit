@@ -16,17 +16,42 @@ const TITRE = 'Les recettes du Sud-Ouest'
 
 // ─── Texte aide ───────────────────────────────────────────────────────────────
 
-const API_KEY_HELP = `Pour explorer le récit, vous avez besoin d'une clé API Anthropic.
+const helpTextStyle: React.CSSProperties = {
+  fontFamily: "'Cormorant Garamond', Georgia, serif",
+  fontSize: 'clamp(15px, 1.7vw, 18px)', fontWeight: 300,
+  color: '#1a1814', lineHeight: 1.75,
+  marginBottom: '1.5rem',
+}
 
-Comment l'obtenir :
-1. Créez un compte sur console.anthropic.com
-2. Dans le menu, allez dans "API Keys"
-3. Cliquez "Create Key" et copiez la clé (commence par sk-ant-)
-
-Votre clé est stockée uniquement dans votre navigateur.
-Elle ne passe par aucun serveur — les conversations avec les personnages se font directement entre votre navigateur et Anthropic.
-
-Coût estimé : quelques cents par session.`
+function ApiKeyHelp() {
+  const linkStyle: React.CSSProperties = {
+    color: '#8b6f47', textDecoration: 'underline', cursor: 'pointer',
+  }
+  return (
+    <div style={helpTextStyle}>
+      <p style={{ marginBottom: '1rem' }}>
+        Pour explorer le récit, vous avez besoin d'une clé API Anthropic.
+      </p>
+      <p style={{ marginBottom: '0.5rem' }}>Comment l'obtenir :</p>
+      <ol style={{ paddingLeft: '1.25rem', marginBottom: '1rem' }}>
+        <li>Créez un compte sur{' '}
+          <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={linkStyle}>
+            console.anthropic.com
+          </a>
+        </li>
+        <li>Dans le menu, allez dans "API Keys"</li>
+        <li>Cliquez "Create Key" et copiez la clé (commence par sk-ant-)</li>
+      </ol>
+      <p style={{ marginBottom: '0.5rem' }}>
+        Votre clé est stockée uniquement dans votre navigateur.{' '}
+        Elle ne passe par aucun serveur — les conversations avec les personnages se font directement entre votre navigateur et Anthropic.
+      </p>
+      <p>
+        Coût estimé : environ 1 $ par heure de jeu.
+      </p>
+    </div>
+  )
+}
 
 // ─── Reset — n'efface PAS la clé API ─────────────────────────────────────────
 
@@ -215,14 +240,7 @@ export default function Home() {
       {showHelpModal && (
         <div style={modalOverlay} onClick={() => setShowHelpModal(false)}>
           <div style={modalBox} onClick={e => e.stopPropagation()}>
-            <p style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              fontSize: 'clamp(15px, 1.7vw, 18px)', fontWeight: 300,
-              color: '#1a1814', lineHeight: 1.75,
-              whiteSpace: 'pre-line', marginBottom: '1.5rem',
-            }}>
-              {API_KEY_HELP}
-            </p>
+            <ApiKeyHelp />
             <div style={{ textAlign: 'right' }}>
               <button onClick={() => { setShowHelpModal(false); setShowApiModal(true) }} style={btnPrimary}>
                 Entrer ma clé
