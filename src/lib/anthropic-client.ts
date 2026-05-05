@@ -392,15 +392,34 @@ Règles :
         messages: [
           {
             role: 'user',
-            content: `Indices à surveiller (tous les indices non encore découverts de ce personnage) :
+            content: `Tu analyses la réplique d'un personnage pour détecter si une information narrative précise a été explicitement révélée.
+
+INDICES À DÉTECTER :
 ${allCharacterClues.map(c => `[${c.id}] ${c.content}`).join('\n')}
 
-Réplique du personnage :
+RÉPLIQUE DU PERSONNAGE :
 "${reply}"
 
-Un indice est révélé UNIQUEMENT si le personnage le dit ou le laisse clairement entendre dans sa réplique.
-Le lecteur ne peut pas révéler d'indices — seul le personnage le peut.
-Si la réplique ne dit rien qui corresponde à un indice, retourne un tableau vide.`,
+RÈGLE STRICTE — un indice est révélé SEULEMENT si les deux conditions sont remplies :
+1. L'information SPÉCIFIQUE décrite dans l'indice est présente DANS LA RÉPLIQUE DU PERSONNAGE (pas une mention tangentielle, pas une inférence).
+2. C'est le personnage qui le dit — pas le lecteur.
+
+RÈGLE CRITIQUE — L'INFORMATION VIENT DU PERSONNAGE, PAS DE LA QUESTION :
+Si le lecteur pose une question qui contient déjà l'information ("Fernand est mort?", "Il est décédé?"), et que le personnage répond de façon vague, émotionnelle ou évasive SANS CONFIRMER EXPLICITEMENT — l'indice N'EST PAS révélé.
+Un silence, un regard perdu, un changement de sujet, un "je sais pas trop" NE CONSTITUENT PAS une confirmation.
+Le personnage doit dire l'information LUI-MÊME, avec ses propres mots.
+
+EXEMPLES DE CE QUI NE COMPTE PAS :
+- Le lecteur dit "Fernand est mort?" et le personnage répond "je sais pas trop où il est" → NON.
+- Le lecteur dit "il est décédé?" et le personnage change de sujet → NON.
+- Une réponse émotionnelle (silence, larmes, regard perdu) sans mots explicites → NON.
+- Une formulation vague qui pourrait s'appliquer à l'indice mais ne le dit pas clairement → NON.
+
+EXEMPLES DE CE QUI COMPTE :
+- Le personnage dit lui-même "Fernand est mort hier" ou "il est décédé" → OUI.
+- Le personnage confirme explicitement avec ses propres mots un fait précis → OUI.
+
+En cas de doute : tableau vide. Mieux vaut manquer une révélation que d'en créer une fausse.`,
           },
         ],
       })

@@ -73,21 +73,13 @@ d'une fraude massive sur les fonds de pension de plusieurs centaines de familles
 Fernand Beausoleil, délégué syndical respecté, a été accusé, jugé et emprisonné pour ce vol.
 Il n'en était pas l'auteur.
 
-L'argent a été détourné par un réseau de quatre hommes : un avocat d'affaires,
-un comptable municipal, un promoteur immobilier et un conseiller politique.
-Ils ont utilisé les fonds pour acquérir à vil prix des terrains contaminés
-du Sud-Ouest — des terrains que personne ne voulait, que tout le monde fuyait.
-Ils ont attendu. Décontaminé discrètement. Revendu ou développé décennie après décennie.
+Fernand savait qui avait commis la fraude. Il a tout consigné dans son cahier de notes
+syndicales — celui qu'il trimbalait partout, que tout le monde prenait pour un simple
+carnet de travail. Ce cahier contient les noms, les dates, les montants.
+C'est ce que Martine appelle son "livre de recettes".
 
-Ces quatre hommes sont aujourd'hui morts. Leurs noms ornent des rues,
-des bibliothèques, des arénas du Sud-Ouest. Leurs enfants et petits-enfants
-vivent sur cette fortune sans en connaître l'origine.
-
-Fernand Beausoleil a tout su. Il a gardé un carnet chiffré — qu'il appelait
-son "livre de recettes" — contenant les noms, les dates, les montants et
-les numéros de comptes. Une assurance-vie qu'il n'a jamais utilisée.
-Il est mort hier. Sauf peut-être à Carole, sa fille, qui a retrouvé
-des documents après sa mort.`,
+Les vrais coupables sont morts. Leurs descendants vivent sur la fortune accumulée.
+La vérité complète n'émergera qu'au terme des cinq chapitres.`,
 
     involvedCharacters: ['martine', 'carole'],
     when: '1973 — et aujourd\'hui',
@@ -124,12 +116,12 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
         requiredClues: ['clue-martine-5'],
       },
       {
-        // Débloqué quand Carole révèle un indice sur le quartier (Verdun, le barbier)
+        // Débloqué quand Carole mentionne le salon Chez Gilles à Verdun (clue-carole-2)
         // → débloque le lieu : Chez Gilles
         id: 'part-3',
         title: 'Chez Gilles',
         unlockedByDefault: false,
-        requiredClues: ['clue-carole-1'],
+        requiredClues: ['clue-carole-2'],
       },
       {
         id: 'part-4',
@@ -138,10 +130,25 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
         requiredClues: [], // à compléter avec les clues du chapitre 3
       },
       {
+        // Chapitres 4-5 — à construire ultérieurement
+        id: 'part-4',
+        title: "L'argent",
+        unlockedByDefault: false,
+        requiredClues: [],
+      },
+      {
         id: 'part-5',
         title: 'Les mains propres',
         unlockedByDefault: false,
-        requiredClues: [], // à compléter avec les clues du chapitre 4-5
+        requiredClues: [],
+      },
+      {
+        // Épilogue de la démo — déclenché par le punch final de Roger
+        // Le lecteur découvre que le "livre de recettes" est le cahier de notes syndicales
+        id: 'part-demo-end',
+        title: 'Fin de la démo',
+        unlockedByDefault: false,
+        requiredClues: ['clue-voisin-3'],
         isEpilogue: true,
       },
     ],
@@ -150,43 +157,68 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
       {
         id: 'node-livre-recettes',
         type: 'pivotDetail',
-        description: 'Martine cherche activement le livre de recettes de Fernand — elle en parle dès le premier échange.',
+        description: "Martine cherche le livre de recettes de Fernand — le moteur initial du récit.",
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-1'],
       },
       {
         id: 'node-delegue-syndical',
         type: 'pivotDetail',
-        description: 'Fernand était délégué syndical — un détail qui donne au "livre de recettes" une tout autre portée possible.',
+        description: "Fernand était délégué syndical — un premier indice que le livre pourrait ne pas être anodin.",
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-2'],
       },
       {
         id: 'node-mort-fernand',
         type: 'keyQuestion',
-        description: 'Fernand est mort hier. Martine le sait dans un coin de sa tête, mais sa démence douce brouille la chronologie.',
+        description: "Fernand est mort hier. Martine le sait dans un coin de sa tête, mais sa démence douce brouille la chronologie.",
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-3'],
       },
       {
         id: 'node-fille-carole',
         type: 'keyQuestion',
-        description: "Martine a une fille, Carole. Elle \"a ses affaires\" — une distance floue que Martine ne comprend plus vraiment.",
+        description: "Martine a une fille, Carole. Distance floue qu'elle ne comprend plus vraiment.",
         involvedCharacters: ['martine', 'carole'],
         unlockedByClues: ['clue-martine-4'],
       },
       {
-        id: 'node-cafe-carole',
+        id: 'node-cafe-monk',
         type: 'keyQuestion',
-        description: "Carole fréquente le Café Monk, rue Monk à Ville-Émard. Martine le sait mais n'y va plus.",
+        description: "Carole fréquente le Café Monk. Débloque le lieu.",
         involvedCharacters: ['martine', 'carole'],
         unlockedByClues: ['clue-martine-5'],
       },
+      {
+        id: 'node-chez-gilles',
+        type: 'pivotDetail',
+        description: "Carole mentionne le salon Chez Gilles à Verdun — barbier de Fernand — et un vieil ami à l'odeur de lotion. Débloque le lieu.",
+        involvedCharacters: ['carole', 'voisin'],
+        unlockedByClues: ['clue-carole-2'],
+      },
+      {
+        id: 'node-fernand-ne-cuisinait-pas',
+        type: 'contradiction',
+        description: "Fernand ne cuisinait jamais. L'idée qu'il ait un livre de recettes est absurde — Roger le sait.",
+        involvedCharacters: ['voisin', 'martine'],
+        unlockedByClues: ['clue-voisin-2'],
+      },
+      {
+        id: 'node-cahier-notes',
+        type: 'keyQuestion',
+        description: "Le punch final : ce que Martine appelle le livre de recettes est le cahier de notes syndicales de Fernand. Déclenche la fin de la démo.",
+        involvedCharacters: ['voisin'],
+        unlockedByClues: ['clue-voisin-3'],
+      },
     ],
+    epilogueMessage: `Vous venez de compléter la démo de Récit.
 
-    epilogueMessage: `Vous avez reconstitué ce que Fernand Beausoleil n'a jamais pu dire.
-Les noms sur les plaques de rue ne changeront pas.
-Mais vous savez maintenant ce qu'ils recouvrent.`,
+Martine cherchait le livre de recettes de Fernand.
+Ce livre n'existe pas — du moins pas sous cette forme.
+Ce que Fernand trimbalait partout, c'était son cahier de notes syndicales.
+Ce qu'il avait mis dedans, personne ne le sait encore.
+
+La suite arrive.`,
   },
 
   clues: [],
