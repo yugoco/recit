@@ -36,7 +36,7 @@ const martine = register({
 
   // ── Description affichée dans la carte personnage ─────────────────────────
   // Décommenter une seule ligne.
-  displayDescription: 'Une mémoire qui nourrit les pigeons',
+  displayDescription: 'Une vieille dame qui nourrit les pigeons',
   // displayDescription: 'Quarante ans sur le même banc',
   // displayDescription: 'Elle sait quelque chose qu\'elle ne sait pas qu\'elle sait',
   // displayDescription: 'Veuve d\'un homme que le quartier n\'a pas oublié',
@@ -862,7 +862,7 @@ export const locations: Location[] = [
   {
     id: 'canal-lachine',
     name: 'Canal Lachine',
-    description: 'Un banc face à l\'eau. Les pigeons connaissent cette femme-là.',
+    description: 'Un banc face à l\'eau. Des pigeons se goinfrent de miettes de pain.',
     era: 'Saint-Henri, Montréal — 2007',
     characters: [martine],
   },
@@ -872,7 +872,7 @@ export const locations: Location[] = [
     // Débloqué par part-2 — quand Martine révèle que Carole est au Café Monk
     id: 'cafe-monk',
     name: 'Café Monk',
-    description: 'Un café rue Monk, à Ville-Émard. Carole y vient tous les jours.',
+    description: 'Un café chaleureux, rue Monk, à Ville-Émard.',
     era: 'Ville-Émard, Montréal — 2007',
     characters: [organisateur, carole],
     unlockedByPart: 'part-2',
@@ -881,7 +881,7 @@ export const locations: Location[] = [
     // Débloqué par part-3 — quand Carole révèle un indice sur le quartier
     id: 'chez-gilles',
     name: 'Chez Gilles',
-    description: 'On y coupe les cheveux et les secrets depuis quarante ans.',
+    description: 'On y coupe les cheveux et on y balaie les secrets depuis quarante ans.',
     era: 'Verdun, Montréal — 2007',
     characters: [voisin, barbier],
     unlockedByPart: 'part-3',

@@ -16,7 +16,7 @@ const TITRE = 'Les recettes du Sud-Ouest'
 
 // ─── Texte aide ───────────────────────────────────────────────────────────────
 
-const API_KEY_HELP = `Pour jouer, vous avez besoin d'une clé API Anthropic.
+const API_KEY_HELP = `Pour explorer le récit, vous avez besoin d'une clé API Anthropic.
 
 Comment l'obtenir :
 1. Créez un compte sur console.anthropic.com
@@ -276,7 +276,7 @@ export default function Home() {
             letterSpacing: '0.1em', color: '#8b6f47',
             textTransform: 'uppercase', marginBottom: '1.5rem',
           }}>
-            Une clé API est requise pour jouer
+            Une clé API est requise pour explorer le récit
           </p>
         )}
 
