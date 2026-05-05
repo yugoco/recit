@@ -8,8 +8,8 @@ import { storageKeys } from '@/lib/time'
 import { API_KEY_STORAGE_KEY, ReaderProgress } from '@/lib/types'
 
 // ─── Titre ────────────────────────────────────────────────────────────────────
-const TITRE = 'Les recettes du Sud-Ouest'
-// const TITRE = 'La recette des honnêtes gens'
+// const TITRE = 'Les recettes du Sud-Ouest'
+const TITRE = 'La recette des honnêtes gens'
 // const TITRE = 'Le livre de recettes'
 // const TITRE = 'Comment réussir dans le Sud-Ouest'
 // const TITRE = 'Les ingrédients'
