@@ -307,7 +307,7 @@ Cette règle a priorité sur toutes les autres règles de formatage.
 
   const narrativePromise = callAnthropic({
     apiKey,
-    model: 'claude-sonnet-4-5',
+    model: 'claude-sonnet-4-6',
     max_tokens: 300,
     system: systemBlocks,
     messages: formattedMessages,
