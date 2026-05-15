@@ -65,6 +65,23 @@ function resetAllProgress(): void {
   keys.forEach(k => localStorage.removeItem(k))
 }
 
+// ─── Debug — débloque tous les lieux et indices ───────────────────────────────
+
+function buildDebugProgress(): ReaderProgress {
+  const allPartIds  = story.heart.parts.map(p => p.id)
+  const allClueIds  = story.clues.map(c => c.id)
+  const allLocIds   = locations
+    .filter(l => l.unlockedByPart)
+    .map(l => l.id)
+
+  return {
+    discoveredClues:        allClueIds,
+    completedParts:         allPartIds,
+    isStoryComplete:        false,
+    newlyUnlockedLocations: allLocIds,
+  }
+}
+
 function loadProgress(): ReaderProgress {
   try {
     const saved = localStorage.getItem(storageKeys.progress())
@@ -93,6 +110,7 @@ export default function Home() {
   const [showCluesPanel,  setShowCluesPanel]   = useState(false)
   const [apiKeySaved,     setApiKeySaved]      = useState(false)
   const [resetDone,       setResetDone]        = useState(false)
+  const [debugActive,     setDebugActive]      = useState(() => typeof window !== 'undefined' && localStorage.getItem('recit_debug_snapshot') !== null)
   const [progress,        setProgress]         = useState<ReaderProgress>({
     discoveredClues: [], completedParts: [], isStoryComplete: false,
   })
@@ -126,6 +144,28 @@ export default function Home() {
     setResetDone(true)
     setProgress({ discoveredClues: [], completedParts: [], isStoryComplete: false })
     setTimeout(() => setResetDone(false), 2500)
+  }
+
+  function debugToggle() {
+    const SNAPSHOT_KEY = 'recit_debug_snapshot'
+    if (!debugActive) {
+      // Sauvegarder l'état actuel avant de tout débloquer
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(progress))
+      const debugProgress = buildDebugProgress()
+      saveProgress(debugProgress)
+      setProgress(debugProgress)
+      setDebugActive(true)
+    } else {
+      // Restaurer l'état sauvegardé
+      const raw = localStorage.getItem(SNAPSHOT_KEY)
+      const restored: ReaderProgress = raw
+        ? JSON.parse(raw)
+        : { discoveredClues: [], completedParts: [], isStoryComplete: false }
+      saveProgress(restored)
+      setProgress(restored)
+      localStorage.removeItem(SNAPSHOT_KEY)
+      setDebugActive(false)
+    }
   }
 
   function markLocationSeen(locationId: string) {
@@ -458,6 +498,23 @@ export default function Home() {
             }}
           >
             {resetDone ? '✓ progression effacée' : 'recommencer'}
+          </button>
+
+          <span style={{ color: '#d4cfc6' }}>·</span>
+
+          <button
+            onClick={debugToggle}
+            style={{
+              fontFamily: "'Raleway', sans-serif",
+              fontSize: 'clamp(11px, 1.2vw, 12px)', fontWeight: 400,
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: debugActive ? '#8b6f47' : '#a09b93',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              transition: 'color 0.3s',
+            }}
+            title="DEBUG — débloque tous les lieux et indices"
+          >
+            {debugActive ? '[debug] restaurer' : '[debug] tout débloquer'}
           </button>
 
         </div>
