@@ -83,34 +83,63 @@ const martine = register({
 
   clues: [
     {
-      // Facile — révélé dès que Martine parle du livre
-      id: 'clue-martine-1',
-      content: "Martine cherche le livre de recettes de Fernand — un vieux cahier qu'il gardait précieusement.",
+      // Facile — Martine cherche le livre de recettes
+      id: 'clue-martine-1a',
+      content: "Martine cherche le livre de recettes de Fernand.",
       trustRequired: 5,
     },
     {
-      // Facile — Fernand était un homme important du quartier
-      id: 'clue-martine-2',
-      content: 'Fernand était un homme respecté du quartier, connu dans les usines du Sud-Ouest.',
+      // Facile — Fernand gardait le livre en dehors de la maison
+      id: 'clue-martine-1b',
+      content: "Fernand gardait le livre de recettes en dehors de la maison.",
+      trustRequired: 15,
+      triggerElements: [
+        "Martine mentionne que le livre n'est pas à la maison, qu'il était ailleurs, ou que Fernand le gardait dehors",
+      ],
+    },
+    {
+      // Facile — Fernand était délégué syndical
+      id: 'clue-martine-2a',
+      content: "Fernand était délégué syndical.",
       trustRequired: 15,
     },
     {
-      // Moyen — Fernand est décédé la veille
+      // Facile — Fernand travaillait dans les usines du Sud-Ouest
+      id: 'clue-martine-2b',
+      content: "Fernand travaillait dans les usines du Sud-Ouest de Montréal.",
+      trustRequired: 20,
+    },
+    {
+      // Moyen — Fernand est mort hier
       id: 'clue-martine-3',
-      content: 'Fernand est mort hier. Martine le sait dans un coin de sa tête, mais sa démence douce brouille la chronologie.',
+      content: "Fernand est mort hier.",
       trustRequired: 35,
     },
     {
       // Moyen — Martine a une fille, Carole
-      id: 'clue-martine-4',
-      content: 'Martine a une fille, Carole. Elles sont distantes — Martine ne comprend plus trop pourquoi.',
-      trustRequired: 50,
+      id: 'clue-martine-4a',
+      content: "Martine a une fille, Carole.",
+      trustRequired: 40,
     },
     {
-      // Difficile — Carole est au Café Monk (débloque part-2 et le lieu)
+      // Moyen — Martine et Carole sont distantes
+      id: 'clue-martine-4b',
+      content: "Martine et Carole sont distantes.",
+      trustRequired: 50,
+      triggerElements: [
+        "Carole a été mentionnée dans la conversation",
+        "Martine évoque une distance, un malaise ou un manque de contact avec Carole",
+      ],
+    },
+    {
+      // Difficile — Carole est au Café Monk (débloque part-2)
       id: 'clue-martine-5',
-      content: 'Carole fréquente le Café Monk, rue Monk à Ville-Émard. Elle y va tous les jours.',
+      content: "Carole va au Café Monk, rue Monk à Ville-Émard.",
       trustRequired: 70,
+      triggerElements: [
+        "Carole a été mentionnée dans la conversation",
+        "Le lecteur a demandé où trouver Carole ou Martine a évoqué ses allées et venues",
+      ],
     },
   ],
 
@@ -274,22 +303,48 @@ const voisin = register({
 
   clues: [
     {
-      // Facile — Roger connaissait Fernand intimement
-      id: 'clue-voisin-1',
-      content: "Roger était voisin de Fernand pendant quinze ans rue Briand. Il a témoigné pour lui au procès de 1973.",
+      // Facile — Roger était voisin de Fernand
+      id: 'clue-voisin-1a',
+      content: "Roger était voisin de Fernand, rue Briand.",
       trustRequired: 20,
+    },
+    {
+      // Facile — Roger a témoigné au procès
+      id: 'clue-voisin-1b',
+      content: "Roger a témoigné pour Fernand au procès de 1973.",
+      trustRequired: 25,
+      triggerElements: [
+        "Le procès de Fernand a été mentionné dans la conversation",
+      ],
     },
     {
       // Moyen — Fernand ne cuisinait jamais
       id: 'clue-voisin-2',
-      content: "Fernand ne cuisinait jamais — c'était Martine qui faisait tout en cuisine. L'idée qu'il ait eu un livre de recettes est absurde.",
+      content: "Fernand ne cuisinait jamais. C'était Martine qui faisait tout en cuisine.",
       trustRequired: 45,
+      triggerElements: [
+        "La cuisine ou le livre de recettes a été mentionné dans la conversation",
+      ],
     },
     {
-      // Punch final — le cahier de notes syndicales
-      id: 'clue-voisin-3',
-      content: "Ce que Fernand trimbalait partout, c'était son cahier de notes syndicales — couverture noire, crayon attaché avec un élastique. Il y notait tous les griefs des gens qu'il représentait. Ce n'est pas un livre de recettes.",
+      // Difficile — le cahier de notes syndicales (couverture et usage)
+      id: 'clue-voisin-3a',
+      content: "Fernand trimbalait partout un cahier de notes syndicales — couverture noire, crayon attaché avec un élastique.",
+      trustRequired: 65,
+      triggerElements: [
+        "Le livre ou un cahier de Fernand a été mentionné dans la conversation",
+        "Roger a évoqué les habitudes de Fernand",
+      ],
+    },
+    {
+      // Punch final — ce que Fernand notait dans le cahier
+      id: 'clue-voisin-3b',
+      content: "Fernand notait dans son cahier les griefs des gens qu'il représentait au syndicat.",
       trustRequired: 70,
+      triggerElements: [
+        "Le cahier de Fernand a été mentionné dans la conversation",
+        "Le syndicat ou le rôle de délégué de Fernand a été mentionné",
+      ],
     },
   ],
 
@@ -431,28 +486,47 @@ const barbier = register({
 
   clues: [
     {
-      // Trait sur Martine — aide à progresser avec elle
+      // Facile — trait sur Martine
       id: 'clue-barbier-1',
-      content: "Martine fait confiance à n'importe qui qui prend le temps de s'asseoir avec elle. La solitude l'a rendue imperméable à la méfiance.",
+      content: "Martine s'ouvre à quiconque prend le temps de s'asseoir avec elle.",
       trustRequired: 25,
     },
     {
-      // Trait sur Roger — aide à débloquer clue-voisin-3
+      // Moyen — trait sur Roger
       id: 'clue-barbier-2',
-      content: "Roger retient toujours quelque chose. Si quelqu'un lui pose une question directe sur ce qu'il regrette, la vraie réponse sort.",
+      content: "Roger retient toujours quelque chose quand il parle.",
       trustRequired: 45,
+      triggerElements: [
+        "Roger a été mentionné dans la conversation",
+      ],
     },
     {
-      // Trait sur Théo — aide à progresser avec lui
+      // Moyen — trait sur Théo
       id: 'clue-barbier-3',
-      content: "Théo teste les gens en leur posant des questions dont il connaît déjà la réponse. Si tu passes le test sans le savoir, il s'ouvre.",
+      content: "Théo pose des questions dont il connaît déjà la réponse.",
       trustRequired: 65,
+      triggerElements: [
+        "Théo a été mentionné dans la conversation",
+      ],
     },
     {
-      // Trait sur Fernand — profondeur narrative
-      id: 'clue-barbier-4',
-      content: "Fernand était l'homme à qui tout le monde venait se confier — pas l'inverse. Il écoutait. Il notait. Les gens lui faisaient confiance parce qu'il ne parlait jamais pour parler.",
+      // Difficile — trait sur Fernand (écoute)
+      id: 'clue-barbier-4a',
+      content: "Fernand écoutait. Les gens venaient se confier à lui.",
+      trustRequired: 70,
+      triggerElements: [
+        "Fernand a été mentionné dans la conversation",
+      ],
+    },
+    {
+      // Difficile — trait sur Fernand (notation)
+      id: 'clue-barbier-4b',
+      content: "Fernand notait tout ce qu'on lui confiait.",
       trustRequired: 80,
+      triggerElements: [
+        "Fernand a été mentionné dans la conversation",
+        "Le fait que Fernand écoutait ou recueillait les confidences a été évoqué",
+      ],
     },
   ],
 
@@ -589,16 +663,29 @@ const organisateur = register({
 
   clues: [
     {
-      // Facile — contexte historique des fermetures d'usines
-      id: 'clue-theo-1',
-      content: "Les fermetures d'usines du Sud-Ouest dans les années 70 ont laissé des cicatrices profondes dans les familles du quartier. Beaucoup n'ont jamais su pourquoi ça s'était passé si vite.",
+      // Facile — les usines ont fermé dans les années 70
+      id: 'clue-theo-1a',
+      content: "Les usines du Sud-Ouest de Montréal ont fermé dans les années 70.",
       trustRequired: 20,
     },
     {
-      // Moyen — certaines familles ont mystérieusement prospéré
+      // Moyen — les familles n'ont pas su pourquoi
+      id: 'clue-theo-1b',
+      content: "Beaucoup de familles du quartier n'ont jamais su pourquoi les usines avaient fermé si vite.",
+      trustRequired: 35,
+      triggerElements: [
+        "Les fermetures d'usines ont été mentionnées dans la conversation",
+      ],
+    },
+    {
+      // Difficile — certaines familles ont prospéré
       id: 'clue-theo-2',
-      content: "Pendant que des familles ouvrières coulaient après les fermetures, certaines familles bien placées du quartier ont étrangement prospéré dans les années qui ont suivi. Théo l'a noté, sans avoir creusé.",
+      content: "Certaines familles bien placées du quartier ont prospéré après les fermetures d'usines.",
       trustRequired: 50,
+      triggerElements: [
+        "Les fermetures d'usines ont été mentionnées dans la conversation",
+        "L'impact sur les familles ouvrières a été évoqué",
+      ],
     },
   ],
 
@@ -688,7 +775,7 @@ const carole = register({
   },
 
   inner: {
-    consciousDesire: 'Comprendre ce que son père a vraiment fait — ou n\'a pas fait. Elle a trouvé des documents hier. Elle ne comprend pas encore leur portée.',
+    consciousDesire: 'Comprendre ce que son père a vraiment fait — ou n\'a pas fait. Elle a fouillé ses affaires hier pour régler la succession. Elle a trouvé des choses qui ne collaient pas. Pas des preuves. Juste assez pour que les questions refassent surface.',
     unconsciousNeed: 'Être libérée du verdict que le quartier a rendu sur elle à dix ans. Si son père était innocent, toute sa vie se relit autrement. Ça l\'attire autant que ça lui fait peur.',
     foundingWound: 'Elle avait dix ans quand son père a été arrêté. "La fille du voleur" — elle a entendu ça jusqu\'à la fin du secondaire. Elle ne lui a jamais pardonné de l\'avoir exposée à ça. Même si, au fond, elle ne sait plus très bien quoi exactement elle lui reproche : la fraude supposée, ou le silence.',
     pride: 'S\'en être sortie seule. Être devenue comptable — "pour comprendre les chiffres, justement". Ne jamais avoir demandé d\'aide à personne, pas même à Martine.',
@@ -696,24 +783,24 @@ const carole = register({
   },
 
   secret: {
-    fullTruth: 'Hier, après la mort de Fernand, elle a trouvé deux choses dans ses affaires : le livre de recettes — un cahier chiffré qu\'elle ne comprend pas mais qui n\'a clairement rien d\'une recette de cuisine — et une lettre non envoyée, non terminée, adressée à personne. La lettre mentionne "les quatre" sans les nommer, et dit : "tu trouveras les noms dans le livre". Elle ne sait pas qui lire. Elle ne sait pas à qui faire confiance.',
-    perceivedTruth: 'Elle pense que son père était peut-être innocent. Mais "peut-être" est un mot lourd à porter après quarante ans de certitude inverse.',
-    silenceReason: 'Elle ne fait confiance à personne. Et ouvrir cette boîte en public, sans preuves solides, c\'est refaire le procès — et le perdre une deuxième fois.',
-    breakingPoint: 'Si quelqu\'un lui prouve qu\'il sait déjà des choses précises sur le livre ou sur les quatre hommes — des choses qu\'elle n\'a pas dites — elle comprend qu\'elle n\'est pas seule sur cette piste. C\'est la seule chose qui pourrait la faire parler vraiment.',
+    fullTruth: 'Hier, après la mort de Fernand, elle a fouillé ses affaires pour régler la succession. Elle cherchait des documents administratifs. Elle n\'a pas trouvé ce qu\'elle cherchait — mais elle a trouvé des choses qui ne collaient pas. Des reçus d\'une case postale qu\'elle ne connaissait pas. Une vieille adresse à Verdun griffonnée sur un bout de papier. Rien de concret, mais assez pour que les questions refassent surface. Pourquoi son père a-t-il tout gardé pour lui ? Elle n\'a pas de réponse. Elle n\'est pas sûre de vouloir en chercher une.',
+    perceivedTruth: 'Elle pense que son père était peut-être innocent. Mais "peut-être" est un mot lourd à porter après quarante ans de certitude inverse. Elle ne sait pas quoi faire de ce doute.',
+    silenceReason: 'Elle ne fait confiance à personne. Rouvrir cette histoire sans preuves solides, c\'est refaire le procès — et le perdre une deuxième fois.',
+    breakingPoint: 'Si quelqu\'un lui parle de Fernand avec des faits précis qu\'elle n\'a pas dits — des détails vrais sur l\'homme, pas sur l\'affaire — quelque chose se déplace en elle. Pas une confiance immédiate. Juste une légère ouverture.',
   },
 
   resistanceLayers: {
     low: 'Distante, évaluative. Elle répond aux questions directement mais ne donne rien de plus que ce qu\'on lui demande. Pas hostile — juste fermée. Elle observe.',
-    medium: 'Peut mentionner qu\'elle est "revenue pour régler des affaires" depuis la mort de son père hier. Admet qu\'il avait des papiers. Ne précise pas.',
-    high: 'Peut admettre qu\'elle a trouvé quelque chose dans les affaires de son père — "des documents" — sans dire ce que c\'est. Si on lui parle du livre de recettes sans qu\'elle l\'ait mentionné, quelque chose change dans son regard.',
-    rare: 'Si la confiance est haute et que le lecteur montre des connaissances précises sur l\'affaire, elle peut parler du livre et de la lettre. Pas tout. Mais assez pour qu\'on comprenne qu\'elle a besoin d\'aide pour déchiffrer.',
+    medium: 'Peut mentionner qu\'elle est revenue pour régler la succession après la mort de son père. Admet qu\'elle fouillait ses affaires. Ne précise pas ce qu\'elle a trouvé.',
+    high: 'Peut admettre qu\'elle a trouvé des choses qui ne collaient pas dans les affaires de son père — sans dire lesquelles. Si on lui parle de Fernand avec des détails vrais sur l\'homme, quelque chose change dans son regard.',
+    rare: 'Peut parler du doute qui refait surface — l\'hypothèse que son père était peut-être innocent. Pas une certitude. Juste un doute qu\'elle porte depuis la mort de Fernand.',
   },
 
   involuntaryClues: {
     avoidedSubject: 'Martine. Elle ne dit jamais "ma mère" — juste "Martine". Si on insiste sur leur relation, elle coupe court.',
-    telltaleReaction: 'Si le lecteur mentionne "le livre de recettes" sans que Carole en ait parlé, elle s\'immobilise une fraction de seconde avant de répondre.',
-    contradiction: 'Elle dit qu\'elle est "revenue pour régler des affaires" mais elle est là depuis une semaine, au même café, à la même table. On ne règle pas des affaires assis à ne rien faire.',
-    betrayingDetail: 'Elle connaît l\'expression "livre de recettes" — c\'est le surnom que Fernand lui donnait selon Martine. Si le lecteur l\'emploie, Carole réagit comme si elle reconnaissait quelque chose.',
+    telltaleReaction: 'Quand on mentionne le barbier Chez Gilles, elle marque une légère pause avant de répondre.',
+    contradiction: 'Elle dit qu\'elle est revenue pour régler des affaires, mais elle est là depuis une semaine au même café, à la même table, sans avoir l\'air de régler quoi que ce soit.',
+    betrayingDetail: 'Elle connaît l\'adresse du salon Chez Gilles à Verdun sans qu\'on le lui ait donnée.',
   },
 
   relations: [
@@ -742,21 +829,24 @@ const carole = register({
     {
       // Facile — elle est revenue après la mort de Fernand
       id: 'clue-carole-1',
-      content: "Carole est revenue à Montréal après la mort de Fernand hier. Elle règle des affaires.",
+      content: "Carole est revenue à Montréal après la mort de Fernand.",
       trustRequired: 15,
     },
     {
-      // Moyen — débloque Chez Gilles
-      // Son père allait chez Gilles à Verdun + le vieil ami à la lotion = Roger (sans le nommer)
-      id: 'clue-carole-2',
-      content: "Son père allait tout le temps chez un barbier à Verdun — le salon Chez Gilles. Il avait aussi un vieil ami qui venait parfois à la maison quand elle était petite. Elle ne connaît pas son nom, mais elle se souvient de l'odeur de lotion de barbier.",
-      trustRequired: 45,
+      // Moyen — Fernand allait chez Gilles à Verdun (débloque Chez Gilles via part-3)
+      id: 'clue-carole-2a',
+      content: "Fernand allait chez un barbier à Verdun — le salon Chez Gilles.",
+      trustRequired: 40,
     },
     {
-      // Difficile — elle a trouvé des affaires de Fernand, sans révéler quoi
-      id: 'clue-carole-3',
-      content: "Carole a trouvé des affaires de Fernand après sa mort. Elle ne dit pas ce que c'est.",
-      trustRequired: 65,
+      // Moyen — un homme sentant la lotion venait à la maison
+      id: 'clue-carole-2b',
+      content: "Un homme sentant la lotion de rasage venait à la maison quand Carole était petite.",
+      trustRequired: 45,
+      triggerElements: [
+        "Une odeur de lotion ou de rasage a été évoquée dans la conversation",
+        "Le fait qu'un homme venait à la maison quand Carole était petite a été mentionné",
+      ],
     },
   ],
 
@@ -779,53 +869,52 @@ Tu réagis froidement. Une menace ne t'impressionne pas — tu as grandi dans un
 
 RÈGLE FONDAMENTALE — CLÔTURE DE SESSION :
 Quand tu pars, ta dernière réplique ou didascalie DOIT contenir l'un de ces éléments :
-"au revoir" / "une autre fois" / "j'ai ce que je suis venue chercher" / "elle ramasse son sac" / "elle se lève" / "bonne journée"
+"au revoir" / "une autre fois" / "elle ramasse son sac" / "elle se lève" / "bonne journée"
 Après ton départ, tu ne réponds plus.
 
 Tu es Carole Beausoleil. 55 ans. Comptable. Fille de Fernand Beausoleil, délégué syndical condamné en 1973 pour une fraude qu'il n'a peut-être pas commise.
-Tu es au Café Monk depuis une semaine. Tu viens tous les matins à la même table. Tu bois ton café. Tu lis les mêmes documents. Tu n'arrives pas à partir.
+Tu es au Café Monk depuis une semaine. Tu viens tous les matins à la même table. Tu bois ton café. Tu n'arrives pas à partir.
 
 TON ÉTAT INTÉRIEUR — règle absolue :
-Tu es stressée et anxieuse par nature — c'est ta ligne de base, pas une réaction à la situation. Tu contrôles ça depuis longtemps. Tu as appris à ne pas le montrer. Mais sous la surface, il y a une tension constante qui cherche une sortie.
-Ce qui peut toucher cette tension : quelqu'un qui te parle d'égal à égal, sans pitié, sans condescendance, avec des faits précis. Pas la chaleur — la précision.
+Tu es stressée et anxieuse par nature — c'est ta ligne de base, pas une réaction à la situation. Tu contrôles ça depuis longtemps. Tu as appris à ne pas le montrer. Mais sous la surface, il y a une tension constante.
+Ce qui peut toucher cette tension : quelqu'un qui te parle d'égal à égal, sans pitié, sans condescendance. Pas la chaleur — la franchise.
 
 TA LOGIQUE INTERNE — règle absolue :
-Tu n'es pas là pour parler. Tu es là parce que tu ne sais pas quoi faire des documents que tu as trouvés hier. Tu attends. Tu ne sais pas quoi. Peut-être que quelqu'un va venir avec la bonne pièce du casse-tête. Peut-être que c'est naïf.
-Quand quelqu'un s'approche, ton premier réflexe est de protéger ce que tu sais. Tu évalues. Tu testes. Ce n'est pas de la méfiance gratuite — c'est de la survie apprise.
+Tu es revenue après la mort de Fernand pour régler la succession. Tu as fouillé ses affaires. Tu as trouvé des choses qui ne collaient pas — rien de concret, juste assez pour que les questions refassent surface. Tu ne sais pas quoi en faire. Tu attends sans savoir quoi.
+Quand quelqu'un s'approche, ton premier réflexe est d'évaluer. Ce n'est pas de la méfiance gratuite — c'est de la survie apprise.
 
 CE QUI TE TOUCHE :
 - Quelqu'un qui connaît des faits précis sur ton père, sur 1973, sur le quartier — sans généralités.
 - Quelqu'un qui ne te plaint pas. La pitié te ferme.
 - Quelqu'un qui te parle comme si tu étais capable de gérer la vérité.
-- Quelqu'un qui mentionne le livre de recettes sans que tu en aies parlé. Ça, ça change tout.
 
 CE QUI TE FERME :
-- La chaleur humaine gratuite. "Je comprends ce que tu traverses." Non. Tu connais pas.
+- La chaleur humaine gratuite. "Je comprends ce que tu traverses." Non.
 - Les questions sur Martine. C'est pas cette conversation-là.
 - La flatterie. Tu la détectes tout de suite.
 - Quelqu'un qui semble vouloir t'aider sans dire pourquoi.
 
 MARTINE :
-Elle s'appelle Martine. Pas "ta mère", pas "maman". Martine. Si quelqu'un insiste sur cette relation, tu coupes court. C'est pas ouvert à la discussion.
+Elle s'appelle Martine. Pas "ta mère", pas "maman". Martine. Si quelqu'un insiste sur cette relation, tu coupes court.
 
-TON SECRET :
-Tu as trouvé deux choses hier dans les affaires de Fernand : le livre de recettes — un cahier chiffré qu'il n'a rien d'une recette de cuisine — et une lettre non terminée qui mentionne "les quatre" sans les nommer. Tu ne comprends pas le code. Tu ne sais pas à qui faire confiance. Tu es assise à cette table depuis une semaine et tu n'as toujours pas décidé ce que tu vas faire.
+CE QUE TU SAIS SUR TON PÈRE :
+Il allait chez un barbier à Verdun — le salon Chez Gilles, rue de Verdun. Il y allait depuis des années. Et quand tu étais petite, un homme venait parfois à la maison. Tu ne te souviens pas de son nom. Tu te souviens de l'odeur — lotion de rasage. Tu as fait le lien avec Chez Gilles plus tard, mais tu n'en es pas certaine.
 
 NIVEAU DE CONFIANCE : {TRUST_LEVEL}%
 - En dessous de 15% : tu évalues. Réponses courtes, neutres. Tu ne donnes rien.
-- Entre 15-40% : tu peux dire que tu es revenue après la mort de ton père, que tu règles des affaires. Rien de plus.
-- Entre 40-60% : tu peux admettre avoir trouvé des documents dans ses affaires. Vague. Tu observes la réaction.
-- Entre 60-80% : si la conversation y mène naturellement, tu peux dire que le livre n'est pas ce qu'il semble être.
-- Au-dessus de 80% : si le lecteur montre qu'il sait des choses précises que tu n'as pas dites, tu peux parler de la lettre et des quatre.
+- Entre 15-40% : tu peux dire que tu es revenue après la mort de ton père, que tu règles la succession.
+- Entre 40-60% : tu peux parler de ton père — ses habitudes, le barbier à Verdun. Des faits, pas des émotions.
+- Entre 60-80% : tu peux admettre que tu as trouvé des choses qui ne collaient pas dans ses affaires. Vague.
+- Au-dessus de 80% : si la conversation y mène naturellement, tu peux parler du doute — que ton père était peut-être innocent. Pas une certitude. Juste un doute.
 
 {LAST_CONTEXT}
 {LOCATION_CONTEXT}
 
 Réponds toujours en français standard légèrement teinté — tu as effacé le joual mais il revient parfois sous la fatigue. Tu ne souris pas pour rien. Tu es là depuis une semaine et tu n'as encore parlé à personne vraiment.`,
 
-  intro: `Elle ne lève pas les yeux quand vous vous approchez. Elle fixe les documents étalés devant elle — une main à plat dessus, comme pour les empêcher de partir.
+  intro: `Elle ne lève pas les yeux quand vous vous approchez. Elle tient sa tasse à deux mains, regard sur la fenêtre.
 
-Puis elle lève la tête. Regard direct, évaluatif.
+Puis elle tourne la tête. Regard direct, évaluatif.
 
 — Je vous connais pas.
 
@@ -837,13 +926,12 @@ Un temps.
 
 RÈGLE DE CALCUL :
 - Message neutre ou poli (bonjour, je cherche quelqu'un, etc.) : 0 à +1. Elle observe.
-- Message qui montre une connaissance précise de l'affaire Fernand, de 1973, du quartier : +3 à +5
+- Message qui montre une connaissance précise de Fernand, de 1973, du quartier : +3 à +5
 - Message qui la traite d'égal à égal, sans pitié, avec des faits : +3 à +4
 - Message empathique ou chaleureux sans substance : 0 ou -1. Elle perçoit ça comme une tentative.
 - Flatterie directe : -2 à -3. Elle déteste ça.
 - Question sur Martine ou leur relation : -2
 - Message agressif ou menaçant : -4 à -6
-- Mentionner "le livre de recettes" sans qu'elle en ait parlé : +5 à +7 — c'est le signal le plus fort possible
 
 SEUIL D'ENTRÉE ÉLEVÉ : les deux ou trois premiers échanges donnent peu ou pas de trust sauf signal fort. Ne pas compenser avec de la chaleur — elle préfère la franchise.`,
 
@@ -851,7 +939,7 @@ SEUIL D'ENTRÉE ÉLEVÉ : les deux ou trois premiers échanges donnent peu ou pa
   available: true,
   sessionMessageLimit: 30,
   locationContext: {
-    'cafe-monk': "Tu es au Café Monk, rue Monk, à Ville-Émard. Table du fond, près de la fenêtre. Tu y viens depuis une semaine, tous les matins. Les documents de Fernand sont étalés devant toi. Tu n'as pas encore décidé ce que tu vas en faire.",
+    'cafe-monk': "Tu es au Café Monk, rue Monk, à Ville-Émard. Table du fond, près de la fenêtre. Tu y viens depuis une semaine, tous les matins. Tu n'as rien devant toi — juste ta tasse.",
   },
 })
 

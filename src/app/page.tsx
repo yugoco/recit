@@ -277,6 +277,19 @@ export default function Home() {
       {/* ── Contenu principal ──────────────────────────────────────────── */}
       <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center' }}>
 
+        {/* ── Sous-titre ─────────────────────────────────────────────────── */}
+        <p style={{
+          fontFamily: "'Raleway', sans-serif",
+          fontSize: 'clamp(10px, 1.1vw, 12px)',
+          fontWeight: 400,
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+          color: '#a09b93',
+          marginBottom: '0.75rem',
+        }}>
+          Un roman interactif
+        </p>
+
         <h1 style={{
           fontFamily: "'Cormorant Garamond', Georgia, serif",
           fontSize: 'clamp(36px, 6vw, 58px)',

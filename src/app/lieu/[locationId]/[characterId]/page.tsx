@@ -552,7 +552,7 @@ export default function ConversationPage() {
               La conversation s'est refermée.
             </p>
           ) : (
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -561,20 +561,22 @@ export default function ConversationPage() {
                 disabled={isLoading || sessionEnded}
                 placeholder="Dites quelque chose…"
                 rows={1}
-                style={{ flex: 1, fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(14px, 1.6vw, 16px)', fontWeight: 300, color: '#1a1814', background: '#ede9e2', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1rem', resize: 'none', outline: 'none', minHeight: '44px', maxHeight: '120px', lineHeight: '1.5', opacity: sessionEnded ? 0.4 : 1 }}
+                style={{ width: '100%', boxSizing: 'border-box', fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(14px, 1.6vw, 16px)', fontWeight: 300, color: '#1a1814', background: '#ede9e2', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1rem', resize: 'none', outline: 'none', minHeight: '44px', maxHeight: '120px', lineHeight: '1.5', opacity: sessionEnded ? 0.4 : 1 }}
               />
-              <button
-                onClick={sendMessage}
-                disabled={isLoading || !input.trim() || sessionEnded}
-                style={{ fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(13px, 1.4vw, 14px)', fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8b6f47', background: 'none', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1.25rem', cursor: (isLoading || !input.trim() || sessionEnded) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', height: '44px', opacity: (isLoading || !input.trim() || sessionEnded) ? 0.4 : 1 }}
-              >
-                Envoyer
-              </button>
-              <CluesButton
-                clueCount={progress.discoveredClues.length}
-                onClick={() => setShowCluesPanel(true)}
-                variant="icon"
-              />
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                <CluesButton
+                  clueCount={progress.discoveredClues.length}
+                  onClick={() => setShowCluesPanel(true)}
+                  variant="icon"
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={isLoading || !input.trim() || sessionEnded}
+                  style={{ fontFamily: "'Raleway', sans-serif", fontSize: 'clamp(13px, 1.4vw, 14px)', fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8b6f47', background: 'none', border: '1px solid #d4cfc6', borderRadius: '2px', padding: '0.75rem 1.25rem', cursor: (isLoading || !input.trim() || sessionEnded) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', height: '44px', opacity: (isLoading || !input.trim() || sessionEnded) ? 0.4 : 1 }}
+                >
+                  Envoyer
+                </button>
+              </div>
             </div>
           )}
         </div>

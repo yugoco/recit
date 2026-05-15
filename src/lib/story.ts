@@ -14,6 +14,9 @@ export interface Clue {
   revealedBy: string
   content: string
   trustRequired: number
+  // Éléments factuels qui doivent TOUS avoir été évoqués dans la conversation
+  // avant que cet indice puisse être détecté. Si absent ou vide, pas de pré-requis.
+  triggerElements?: string[]
 }
 
 export interface Part {
@@ -107,30 +110,20 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
         requiredClues: [],
       },
       {
-        // Débloqué quand Martine révèle l'indice difficile :
-        // — Carole est souvent au Café Monk (clue-martine-5)
-        // → débloque le lieu : Café Monk
+        // Débloqué quand Martine révèle que Carole est au Café Monk (clue-martine-5)
         id: 'part-2',
         title: 'Le Café Monk',
         unlockedByDefault: false,
         requiredClues: ['clue-martine-5'],
       },
       {
-        // Débloqué quand Carole mentionne le salon Chez Gilles à Verdun (clue-carole-2)
-        // → débloque le lieu : Chez Gilles
+        // Débloqué quand Carole mentionne le salon Chez Gilles (clue-carole-2a)
         id: 'part-3',
         title: 'Chez Gilles',
         unlockedByDefault: false,
-        requiredClues: ['clue-carole-2'],
+        requiredClues: ['clue-carole-2a'],
       },
       {
-        id: 'part-4',
-        title: 'L\'argent',
-        unlockedByDefault: false,
-        requiredClues: [], // à compléter avec les clues du chapitre 3
-      },
-      {
-        // Chapitres 4-5 — à construire ultérieurement
         id: 'part-4',
         title: "L'argent",
         unlockedByDefault: false,
@@ -144,11 +137,10 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
       },
       {
         // Épilogue de la démo — déclenché par le punch final de Roger
-        // Le lecteur découvre que le "livre de recettes" est le cahier de notes syndicales
         id: 'part-demo-end',
         title: 'Fin de la démo',
         unlockedByDefault: false,
-        requiredClues: ['clue-voisin-3'],
+        requiredClues: ['clue-voisin-3a'],
         isEpilogue: true,
       },
     ],
@@ -159,56 +151,84 @@ forme de dignité — la preuve qu'il savait, même si personne d'autre ne le sa
         type: 'pivotDetail',
         description: "Martine cherche le livre de recettes de Fernand — le moteur initial du récit.",
         involvedCharacters: ['martine'],
-        unlockedByClues: ['clue-martine-1'],
+        unlockedByClues: ['clue-martine-1a'],
+      },
+      {
+        id: 'node-livre-hors-maison',
+        type: 'pivotDetail',
+        description: "Fernand gardait le livre en dehors de la maison — detail qui contredit l'idée d'un simple cahier de cuisine.",
+        involvedCharacters: ['martine'],
+        unlockedByClues: ['clue-martine-1b'],
       },
       {
         id: 'node-delegue-syndical',
         type: 'pivotDetail',
-        description: "Fernand était délégué syndical — un premier indice que le livre pourrait ne pas être anodin.",
+        description: "Fernand était délégué syndical.",
         involvedCharacters: ['martine'],
-        unlockedByClues: ['clue-martine-2'],
+        unlockedByClues: ['clue-martine-2a'],
+      },
+      {
+        id: 'node-usines-sud-ouest',
+        type: 'pivotDetail',
+        description: "Fernand travaillait dans les usines du Sud-Ouest.",
+        involvedCharacters: ['martine'],
+        unlockedByClues: ['clue-martine-2b'],
       },
       {
         id: 'node-mort-fernand',
         type: 'keyQuestion',
-        description: "Fernand est mort hier. Martine le sait dans un coin de sa tête, mais sa démence douce brouille la chronologie.",
+        description: "Fernand est mort hier.",
         involvedCharacters: ['martine'],
         unlockedByClues: ['clue-martine-3'],
       },
       {
         id: 'node-fille-carole',
         type: 'keyQuestion',
-        description: "Martine a une fille, Carole. Distance floue qu'elle ne comprend plus vraiment.",
+        description: "Martine a une fille, Carole. Elles sont distantes.",
         involvedCharacters: ['martine', 'carole'],
-        unlockedByClues: ['clue-martine-4'],
+        unlockedByClues: ['clue-martine-4a', 'clue-martine-4b'],
       },
       {
         id: 'node-cafe-monk',
         type: 'keyQuestion',
-        description: "Carole fréquente le Café Monk. Débloque le lieu.",
+        description: "Carole va au Café Monk. Débloque le lieu.",
         involvedCharacters: ['martine', 'carole'],
         unlockedByClues: ['clue-martine-5'],
       },
       {
         id: 'node-chez-gilles',
         type: 'pivotDetail',
-        description: "Carole mentionne le salon Chez Gilles à Verdun — barbier de Fernand — et un vieil ami à l'odeur de lotion. Débloque le lieu.",
+        description: "Fernand allait chez Gilles à Verdun. Débloque le lieu.",
+        involvedCharacters: ['carole'],
+        unlockedByClues: ['clue-carole-2a'],
+      },
+      {
+        id: 'node-homme-lotion',
+        type: 'pivotDetail',
+        description: "Un homme sentant la lotion de rasage venait à la maison quand Carole était petite.",
         involvedCharacters: ['carole', 'voisin'],
-        unlockedByClues: ['clue-carole-2'],
+        unlockedByClues: ['clue-carole-2b'],
       },
       {
         id: 'node-fernand-ne-cuisinait-pas',
         type: 'contradiction',
-        description: "Fernand ne cuisinait jamais. L'idée qu'il ait un livre de recettes est absurde — Roger le sait.",
+        description: "Fernand ne cuisinait jamais — ce que Martine appelle le livre de recettes ne peut pas être un livre de cuisine.",
         involvedCharacters: ['voisin', 'martine'],
         unlockedByClues: ['clue-voisin-2'],
       },
       {
         id: 'node-cahier-notes',
         type: 'keyQuestion',
-        description: "Le punch final : ce que Martine appelle le livre de recettes est le cahier de notes syndicales de Fernand. Déclenche la fin de la démo.",
+        description: "Fernand trimbalait partout un cahier de notes syndicales — couverture noire, crayon avec un élastique. Déclenche la fin de la démo.",
         involvedCharacters: ['voisin'],
-        unlockedByClues: ['clue-voisin-3'],
+        unlockedByClues: ['clue-voisin-3a'],
+      },
+      {
+        id: 'node-cahier-contenu',
+        type: 'pivotDetail',
+        description: "Fernand notait dans son cahier les griefs des gens qu'il représentait.",
+        involvedCharacters: ['voisin'],
+        unlockedByClues: ['clue-voisin-3b'],
       },
     ],
     epilogueMessage: `Vous venez de compléter la démo de Récit.

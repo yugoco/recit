@@ -70,6 +70,9 @@ export interface CharacterBlueprint {
     id: string
     content: string
     trustRequired: number
+    // Éléments qui doivent TOUS être présents dans la conversation avant détection.
+    // Chaque élément est une courte description factuelle d'un fait à observer.
+    triggerElements?: string[]
   }>
   systemPrompt: string
   intro: string
@@ -131,6 +134,9 @@ Ce qui pourrait ${object} faire parler : ${bp.secret.breakingPoint}`
     revealedBy: bp.id,
     content: c.content,
     trustRequired: c.trustRequired,
+    ...(c.triggerElements && c.triggerElements.length > 0
+      ? { triggerElements: c.triggerElements }
+      : {}),
   }))
 
   const canReactTo: Record<string, string> = {}

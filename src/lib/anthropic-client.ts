@@ -166,9 +166,8 @@ function detectExitSignal(reply: string): boolean {
   return exitPatterns.some(p => p.test(lower))
 }
 
-// ─── Tool analytique unifié ───────────────────────────────────────────────────
+// ─── Tool trust ───────────────────────────────────────────────────────────────
 
-// Trust tool — évalue le message du lecteur (appel parallèle à la narration)
 const TRUST_TOOL = [
   {
     name: 'evaluate_trust',
@@ -182,25 +181,6 @@ const TRUST_TOOL = [
         },
       },
       required: ['trust_delta'],
-    },
-  },
-]
-
-// Clue tool — évalue la réplique du PERSONNAGE (appel séquentiel après la narration)
-const CLUE_TOOL = [
-  {
-    name: 'detect_clues',
-    description: "Lit la réplique du personnage et identifie les indices narratifs qu'elle révèle au lecteur.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        revealed_clue_ids: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'IDs des indices révélés par ce que le personnage vient de dire. Tableau vide si aucun.',
-        },
-      },
-      required: ['revealed_clue_ids'],
     },
   },
 ]
@@ -249,14 +229,25 @@ export async function sendChatMessage(
   const availableClues = allCharacterClues.filter(c => trustLevel >= c.trustRequired)
   const lockedClues    = allCharacterClues.filter(c => trustLevel < c.trustRequired)
 
+  // Indices disponibles — Sonnet pose [CLUE:id] quand il les révèle explicitement.
+  // La détection est faite par Sonnet lui-même, pas par un LLM tiers.
   const cluesBlock = availableClues.length > 0
-    ? `SUJETS QUE TU PEUX ABORDER (seulement si la conversation y mène naturellement) :\n${availableClues.map(c => `- [ID:${c.id}] ${c.content}`).join('\n')}\nTu n'abordes pas ces sujets spontanément.`
+    ? `INDICES QUE TU PEUX RÉVÉLER (seulement si la conversation y mène naturellement) :
+${availableClues.map(c => `- [${c.id}] "${c.content}"`).join('\n')}
+
+SIGNAL OBLIGATOIRE : si tu révèles explicitement l'une de ces informations dans ta réplique,
+ajoute le tag à la toute fin, après tout le texte narratif : [CLUE:id]
+Exemple : — Elle va au Café Monk, rue Monk. [CLUE:clue-martine-5]
+Ne pose le tag QUE si tu énonces toi-même l'information clairement.
+Ne pose JAMAIS le tag pour une esquive, un flottement, une émotion, ou une réponse vague.
+Plusieurs indices révélés : un tag par indice, à la suite.`
     : ''
 
-  // Sujets verrouillés — la confiance n'est pas encore suffisante.
-  // Même si le lecteur pose la question directement, le personnage esquive, répond vaguement, ou redirige.
+  // Sujets verrouillés — confiance insuffisante, esquiver sans révéler
   const lockedCluesBlock = lockedClues.length > 0
-    ? `SUJETS INTERDITS — niveau de confiance insuffisant, NE PAS aborder sous aucun prétexte :\n${lockedClues.map(c => `- ${c.content} (confiance requise : ${c.trustRequired}%, actuelle : ${trustLevel}%)`).join('\n')}\nSi le lecteur pose une question qui mènerait à ces sujets : esquive naturellement, réponds de façon vague, ou redirige vers ce que tu peux dire. Ne révèle JAMAIS un sujet interdit même face à une question directe.`
+    ? `SUJETS INTERDITS — confiance insuffisante, NE PAS aborder :
+${lockedClues.map(c => `- "${c.content}" (requiert ${c.trustRequired}%, actuel ${trustLevel}%)`).join('\n')}
+Esquive, réponds vaguement, redirige. Ne révèle JAMAIS un sujet interdit.`
     : ''
 
   const relation = getRelation(characterId)
@@ -283,7 +274,18 @@ export async function sendChatMessage(
 
   const semiStaticBlock = [cluesBlock, lockedCluesBlock, reactionsBlock].filter(Boolean).join('\n\n')
 
-  const staticCore = character.systemPrompt
+  // La règle de signal est injectée EN TÊTE du staticCore — priorité maximale,
+  // avant toutes les autres règles narratives du personnage.
+  const tagRuleHeader = availableClues.length > 0
+    ? `RÈGLE ABSOLUE — SIGNAL D'INDICE :
+Quand tu révèles explicitement une information listée dans INDICES QUE TU PEUX RÉVÉLER,
+tu DOIS ajouter [CLUE:id] à la toute fin de ta réponse. C'est obligatoire, pas optionnel.
+Cette règle a priorité sur toutes les autres règles de formatage.
+
+`
+    : ''
+
+  const staticCore = tagRuleHeader + character.systemPrompt
     .replace('{LAST_CONTEXT}', '')
     .replace('{TRUST_LEVEL}', '')
     .replace('{LOCATION_CONTEXT}', '')
@@ -301,8 +303,6 @@ export async function sendChatMessage(
     : [{ role: 'user' as const, content: '...' }]
 
   // ── Appel narratif + trust en parallèle ──────────────────────────────────
-  // Les deux peuvent tourner en même temps car le trust évalue le MESSAGE
-  // du lecteur — il n'a pas besoin de connaître la réponse de Sonnet.
   const shouldAnalyse = !openingMessage && messages.some(m => m.role === 'user')
 
   const narrativePromise = callAnthropic({
@@ -324,11 +324,11 @@ export async function sendChatMessage(
           {
             role: 'user',
             content: (() => {
-            const recentExchanges = messages
-              .slice(-6)
-              .map(m => `${m.role === 'user' ? 'Lecteur' : character.name} : ${m.content}`)
-              .join('\n')
-            return `Personnage : ${character.name}
+              const recentExchanges = messages
+                .slice(-6)
+                .map(m => `${m.role === 'user' ? 'Lecteur' : character.name} : ${m.content}`)
+                .join('\n')
+              return `Personnage : ${character.name}
 Confiance actuelle : ${trustLevel}%
 
 PROFIL AFFECTIF DE CE PERSONNAGE :
@@ -344,7 +344,7 @@ Règles :
 - Tout message non hostile reçoit au minimum +1 chez un personnage accueillant.
 - Un message positif après une baisse doit compenser — ne pas retourner 0 si le message est chaleureux.
 - Si la confiance dépasse 70%, limite les gains à +1 ou +2 maximum.`
-          })(),
+            })(),
           },
         ],
       })
@@ -355,11 +355,28 @@ Règles :
     trustPromise,
   ])
 
-  // ── Extraire la réplique ─────────────────────────────────────────────────
-  const reply = narrativeResponse.content
+  // ── Extraire la réplique brute ───────────────────────────────────────────
+  const rawReply = narrativeResponse.content
     .filter((b): b is AnthropicTextBlock => b.type === 'text')
     .map(b => b.text)
     .join('')
+
+  // ── Parser les tags [CLUE:id] posés par Sonnet ───────────────────────────
+  // Sonnet signale lui-même les indices qu'il révèle — pas de LLM tiers.
+  // Validation : chaque ID doit exister dans la liste des indices du personnage
+  // pour éviter qu'un tag halluciné déclenche un indice inexistant.
+  const clueTagPattern = /\[CLUE:([^\]]+)\]/g
+  const newClueIds: string[] = []
+  let match: RegExpExecArray | null
+  while ((match = clueTagPattern.exec(rawReply)) !== null) {
+    const id = match[1].trim()
+    if (allCharacterClues.some(c => c.id === id) && !newClueIds.includes(id)) {
+      newClueIds.push(id)
+    }
+  }
+
+  // Texte propre — tags retirés avant affichage au lecteur
+  const reply = rawReply.replace(/\s*\[CLUE:[^\]]+\]/g, '').trimEnd()
 
   // ── Extraire le trust delta ───────────────────────────────────────────────
   let trustDelta = 0
@@ -372,79 +389,6 @@ Règles :
           trustDelta = Math.max(-8, Math.min(8, input.trust_delta))
         }
       }
-    }
-  }
-
-  // ── Détecter les indices dans la réplique de Martine ─────────────────────
-  // Appel SÉQUENTIEL après la narration — Haiku lit ce que le personnage
-  // vient de dire, pas ce que le lecteur a dit.
-  // Un indice n'est révélé que si le personnage le dit explicitement.
-  let newClueIds: string[] = []
-
-  if (shouldAnalyse && allCharacterClues.length > 0 && reply) {
-    try {
-      const clueResponse = await callAnthropic({
-        apiKey,
-        model: 'claude-haiku-4-5',
-        max_tokens: 100,
-        tools: CLUE_TOOL,
-        tool_choice: { type: 'tool', name: 'detect_clues' },
-        messages: [
-          {
-            role: 'user',
-            content: `Tu analyses la réplique d'un personnage pour détecter si une information narrative précise a été explicitement révélée.
-
-INDICES À DÉTECTER :
-${allCharacterClues.map(c => `[${c.id}] ${c.content}`).join('\n')}
-
-RÉPLIQUE DU PERSONNAGE :
-"${reply}"
-
-RÈGLE STRICTE — un indice est révélé SEULEMENT si les deux conditions sont remplies :
-1. L'information SPÉCIFIQUE décrite dans l'indice est présente MOT POUR MOT ou quasi-mot pour mot DANS LA RÉPLIQUE DU PERSONNAGE.
-2. C'est le personnage qui le dit — pas le lecteur.
-
-RÈGLE CRITIQUE — PAS D'INFÉRENCE DE CATÉGORIE :
-Une information générale ne révèle JAMAIS une information spécifique, même si l'une implique logiquement l'autre.
-"il travaillait dans les shops" ne révèle PAS "délégué syndical".
-"il est parti" ne révèle PAS "il est mort".
-"il avait un carnet" ne révèle PAS "cahier de notes syndicales".
-Le mot ou la formulation EXACTE de l'indice doit apparaître dans la réplique. Si ce n'est pas le cas : tableau vide.
-
-RÈGLE CRITIQUE — L'INFORMATION VIENT DU PERSONNAGE, PAS DE LA QUESTION :
-Si le lecteur pose une question qui contient déjà l'information ("Fernand est mort?", "Il est décédé?"), et que le personnage répond de façon vague, émotionnelle ou évasive SANS CONFIRMER EXPLICITEMENT — l'indice N'EST PAS révélé.
-Un silence, un regard perdu, un changement de sujet, un "je sais pas trop" NE CONSTITUENT PAS une confirmation.
-Le personnage doit dire l'information LUI-MÊME, avec ses propres mots.
-
-EXEMPLES DE CE QUI NE COMPTE PAS :
-- Le personnage dit "il travaillait dans les shops" → ne révèle PAS l'indice sur "délégué syndical" → NON.
-- Le lecteur dit "Fernand est mort?" et le personnage répond "je sais pas trop où il est" → NON.
-- Le lecteur dit "il est décédé?" et le personnage change de sujet → NON.
-- Une réponse émotionnelle (silence, larmes, regard perdu) sans mots explicites → NON.
-- Une formulation vague qui pourrait s'appliquer à l'indice mais ne le dit pas clairement → NON.
-
-EXEMPLES DE CE QUI COMPTE :
-- L'indice dit "délégué syndical" et le personnage dit "il était délégué syndical" → OUI.
-- Le personnage dit lui-même "Fernand est mort hier" ou "il est décédé" → OUI.
-- Le personnage confirme explicitement avec ses propres mots un fait précis qui correspond mot pour mot à l'indice → OUI.
-
-En cas de doute : tableau vide. Mieux vaut manquer une révélation que d'en créer une fausse.`,
-          },
-        ],
-      })
-
-      for (const block of clueResponse.content) {
-        if (block.type === 'tool_use' && block.name === 'detect_clues') {
-          const input = block.input as { revealed_clue_ids?: string[] }
-          if (Array.isArray(input.revealed_clue_ids)) {
-            newClueIds = input.revealed_clue_ids.filter(
-              id => allCharacterClues.some(c => c.id === id)
-            )
-          }
-        }
-      }
-    } catch {
-      // fire-and-forget — pas critique
     }
   }
 
